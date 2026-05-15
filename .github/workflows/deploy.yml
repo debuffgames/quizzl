@@ -35,8 +35,6 @@ jobs:
           tags: ${{ env.IMAGE_PREFIX }}/quizzl-app:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          build-args: |
-            NEXT_PUBLIC_SOCKET_URL=${{ vars.NEXT_PUBLIC_SOCKET_URL }}
 
   build-socket:
     name: Build Socket Image

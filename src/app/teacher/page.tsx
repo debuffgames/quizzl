@@ -138,7 +138,8 @@ function TeacherContent() {
     if (socketRef.current) socketRef.current.disconnect();
     sessionIdRef.current = sid;
 
-    const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL!, { withCredentials: true });
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
+    const socket = io(socketUrl, { withCredentials: true });
     socketRef.current = socket;
 
     socket.on("connect", () => {
