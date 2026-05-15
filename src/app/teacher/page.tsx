@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { QUIZ_EVENTS } from "@/lib/socket/events";
@@ -48,6 +48,10 @@ type Phase =
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TeacherPage() {
+  return <Suspense><TeacherContent /></Suspense>;
+}
+
+function TeacherContent() {
   const searchParams = useSearchParams();
   const lobbyId = searchParams.get("lobbyId") ?? "";
   const token = searchParams.get("token") ?? "";

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { QUIZ_EVENTS } from "@/lib/socket/events";
@@ -18,6 +18,10 @@ interface TopScore { rank: number; displayName: string; score: number; }
 type Phase = "loading" | "error" | "waiting" | "question" | "revealed" | "scoreboard";
 
 export default function BeamerPage() {
+  return <Suspense><BeamerContent /></Suspense>;
+}
+
+function BeamerContent() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
