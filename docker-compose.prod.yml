@@ -28,7 +28,6 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       QUIZZL_MODULE_SECRET: ${QUIZZL_MODULE_SECRET}
       HUB_ORIGIN: ${HUB_ORIGIN}
-      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
     depends_on:
       quizzl-postgres:
         condition: service_healthy
