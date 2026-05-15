@@ -1,0 +1,15 @@
+FROM node:20-alpine
+WORKDIR /app
+RUN corepack enable
+
+COPY package.json package-lock.json* ./
+COPY prisma ./prisma/
+RUN npm ci --omit=dev
+RUN npx prisma generate
+
+COPY server ./server
+COPY src/lib ./src/lib
+COPY tsconfig.json ./
+
+EXPOSE 4001
+CMD ["sh", "-c", "sleep 3 && npx tsx server/socket.ts"]

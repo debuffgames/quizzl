@@ -1,0 +1,74 @@
+services:
+  quizzl-postgres:
+    image: postgres:16-alpine
+    container_name: quizzl-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - quizzl_postgres_data:/var/lib/postgresql/data
+    networks:
+      - quizzl-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  quizzl-app:
+    image: ghcr.io/ahessedenz/quizzl-app:${IMAGE_TAG:-latest}
+    container_name: quizzl-app
+    pull_policy: always
+    restart: unless-stopped
+    expose:
+      - "3000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      QUIZZL_MODULE_SECRET: ${QUIZZL_MODULE_SECRET}
+      HUB_ORIGIN: ${HUB_ORIGIN}
+      NEXT_PUBLIC_SOCKET_URL: ${NEXT_PUBLIC_SOCKET_URL}
+    depends_on:
+      quizzl-postgres:
+        condition: service_healthy
+    networks:
+      - quizzl-network
+
+  quizzl-socket:
+    image: ghcr.io/ahessedenz/quizzl-socket:${IMAGE_TAG:-latest}
+    container_name: quizzl-socket
+    pull_policy: always
+    restart: unless-stopped
+    expose:
+      - "4001"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      QUIZZL_MODULE_SECRET: ${QUIZZL_MODULE_SECRET}
+      SOCKET_PORT: "4001"
+      HUB_ORIGIN: ${HUB_ORIGIN}
+    depends_on:
+      quizzl-postgres:
+        condition: service_healthy
+    networks:
+      - quizzl-network
+
+  quizzl-nginx:
+    image: ghcr.io/ahessedenz/quizzl-nginx:${IMAGE_TAG:-latest}
+    container_name: quizzl-nginx
+    pull_policy: always
+    restart: unless-stopped
+    expose:
+      - "80"
+    depends_on:
+      - quizzl-app
+      - quizzl-socket
+    networks:
+      - quizzl-network
+
+volumes:
+  quizzl_postgres_data:
+
+networks:
+  quizzl-network:
+    driver: bridge

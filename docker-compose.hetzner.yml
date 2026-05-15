@@ -1,0 +1,18 @@
+services:
+  quizzl-nginx:
+    networks:
+      - quizzl-network
+      - web
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.quizzl.rule=Host(`quiz.dinoschule.de`)"
+      - "traefik.http.routers.quizzl.entrypoints=websecure"
+      - "traefik.http.routers.quizzl.tls=true"
+      - "traefik.http.routers.quizzl.tls.certresolver=letsencrypt"
+      - "traefik.http.services.quizzl.loadbalancer.server.port=80"
+
+networks:
+  web:
+    external: true
+  quizzl-network:
+    driver: bridge
