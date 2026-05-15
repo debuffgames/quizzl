@@ -1,6 +1,6 @@
 FROM node:20-alpine AS base
 WORKDIR /app
-RUN corepack enable && corepack prepare npm@latest --activate
+RUN apk add --no-cache openssl libc6-compat && corepack enable && corepack prepare npm@latest --activate
 
 FROM base AS installer
 COPY package.json package-lock.json* ./
