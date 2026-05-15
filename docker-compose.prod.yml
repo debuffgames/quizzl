@@ -57,8 +57,8 @@ services:
     container_name: quizzl-nginx
     pull_policy: always
     restart: unless-stopped
-    expose:
-      - "80"
+    ports:
+      - "8091:80"
     depends_on:
       - quizzl-app
       - quizzl-socket
