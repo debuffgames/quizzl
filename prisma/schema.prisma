@@ -1,0 +1,83 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Quiz {
+  id          String   @id @default(cuid())
+  teacherId   String
+  schoolId    String?
+  title       String
+  description String?
+  locale      String   @default("de")
+  // "PRIVATE" | "SCHOOL" | "PUBLIC"
+  visibility  String   @default("PRIVATE")
+  originalId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  questions Question[]
+  sessions  QuizSession[]
+
+  @@index([teacherId])
+  @@index([visibility])
+  @@index([schoolId])
+}
+
+model Question {
+  id            String  @id @default(cuid())
+  quizId        String
+  quiz          Quiz    @relation(fields: [quizId], references: [id], onDelete: Cascade)
+  text          String
+  imageUrl      String?
+  sortOrder     Int     @default(0)
+  // null = no timer (manual advance in BEAMER mode), number = seconds
+  timeLimitSecs Int?
+  points        Int     @default(100)
+  // "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "YES_NO"
+  answerType    String  @default("SINGLE_CHOICE")
+
+  answers Answer[]
+
+  @@index([quizId])
+}
+
+model Answer {
+  id         String   @id @default(cuid())
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  text       String
+  isCorrect  Boolean  @default(false)
+  sortOrder  Int      @default(0)
+  // Color/shape for BEAMER mode is derived client-side from sortOrder:
+  // 0=red/triangle, 1=blue/circle, 2=yellow/square, 3=green/diamond
+
+  @@index([questionId])
+}
+
+// Live session — no student PII stored (DSGVO)
+// All per-player state (name, score) lives in RAM only
+model QuizSession {
+  id                   String    @id @default(cuid())
+  quizId               String
+  quiz                 Quiz      @relation(fields: [quizId], references: [id])
+  lobbyId              String
+  teacherId            String
+  // "AUTONOMOUS" | "BEAMER"
+  gameMode             String    @default("AUTONOMOUS")
+  // "WAITING" | "ACTIVE" | "PAUSED" | "ENDED"
+  status               String    @default("WAITING")
+  // -1 = not yet started
+  currentQuestionIndex Int       @default(-1)
+  startedAt            DateTime?
+  endedAt              DateTime?
+  createdAt            DateTime  @default(now())
+
+  @@index([lobbyId])
+  @@index([teacherId])
+}
