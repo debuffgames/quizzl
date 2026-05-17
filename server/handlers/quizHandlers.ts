@@ -78,9 +78,10 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     // Auto-advance timer (AUTONOMOUS mode or BEAMER with timer)
     if (session.questionTimerEnd) {
       const delay = question.timeLimitSecs! * 1000;
-      setTimeout(async () => {
+      session.questionTimerHandle = setTimeout(async () => {
         const current = sessionManager.getById(sessionId);
         if (!current || current.currentQuestionIndex !== nextIndex) return;
+        current.questionTimerHandle = null;
         await revealAnswer(io, current, sessionManager);
       }, delay);
     }
@@ -91,6 +92,10 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     if (!sessionId) return;
     const session = sessionManager.getById(sessionId);
     if (!session) return;
+    if (session.questionTimerHandle) {
+      clearTimeout(session.questionTimerHandle);
+      session.questionTimerHandle = null;
+    }
     await revealAnswer(io, session, sessionManager);
   });
 
@@ -113,11 +118,6 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
 }
 
 async function revealAnswer(io: Server, session: LiveSession, _sessionManager: SessionManager) {
-  const question = await prisma.question.findFirst({
-    where: { quizId: session.quizId, sortOrder: session.currentQuestionIndex },
-    include: { answers: true },
-  });
-  // Fallback: find by index order
   const allQuestions = await prisma.question.findMany({
     where: { quizId: session.quizId },
     orderBy: { sortOrder: "asc" },
@@ -125,7 +125,7 @@ async function revealAnswer(io: Server, session: LiveSession, _sessionManager: S
     skip: session.currentQuestionIndex,
     take: 1,
   });
-  const q = allQuestions[0] ?? question;
+  const q = allQuestions[0];
   if (!q) return;
 
   const correctIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);

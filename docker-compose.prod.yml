@@ -28,6 +28,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       QUIZZL_MODULE_SECRET: ${QUIZZL_MODULE_SECRET}
       HUB_ORIGIN: ${HUB_ORIGIN}
+      QUIZZL_SOCKET_INTERNAL_URL: http://quizzl-socket:4001
     depends_on:
       quizzl-postgres:
         condition: service_healthy

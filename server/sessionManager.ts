@@ -19,7 +19,8 @@ export interface LiveSession {
   beamerSocketId: string | null;
   gameMode: "AUTONOMOUS" | "BEAMER";
   currentQuestionIndex: number;
-  questionTimerEnd: number | null; // epoch ms, null if no timer
+  questionTimerEnd: number | null;    // epoch ms, null if no timer
+  questionTimerHandle: ReturnType<typeof setTimeout> | null;
   participants: Map<string, LiveParticipant>; // participantId → participant
   socketToParticipant: Map<string, string>;   // socketId → participantId
 }
@@ -29,9 +30,10 @@ export class SessionManager {
   private lobbyToSession = new Map<string, string>();       // lobbyId → sessionId
   private socketToSession = new Map<string, string>();      // socketId → sessionId
 
-  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant">): LiveSession {
+  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle">): LiveSession {
     const live: LiveSession = {
       ...session,
+      questionTimerHandle: null,
       participants: new Map(),
       socketToParticipant: new Map(),
     };
