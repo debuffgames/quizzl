@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from "next/server";
 const HUB_ORIGIN = process.env.HUB_ORIGIN ?? "";
 const STATE_CHANGING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function hostname(url: string): string {
+  try { return new URL(url).hostname; } catch { return ""; }
+}
+
 export function middleware(req: NextRequest) {
   if (!STATE_CHANGING.has(req.method)) return NextResponse.next();
 
@@ -14,16 +18,15 @@ export function middleware(req: NextRequest) {
   // No Origin header = same-origin navigation or server-to-server call → allow
   if (!origin) return NextResponse.next();
 
-  // Same origin as quizzl itself → allow
-  // Use x-forwarded-proto (set by Traefik) — req.nextUrl.protocol is
-  // always http: behind a reverse proxy and would cause a false mismatch.
-  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
-  const host = req.headers.get("host") ?? "";
-  const ownOrigin = `${proto}://${host}`;
-  if (origin === ownOrigin) return NextResponse.next();
+  const originHost = hostname(origin);
+  const ownHost = req.headers.get("host") ?? "";
+  const hubHost = hostname(HUB_ORIGIN);
 
-  // Trusted hub origin → allow
-  if (origin === HUB_ORIGIN) return NextResponse.next();
+  // Same host as quizzl itself → allow
+  if (originHost === ownHost) return NextResponse.next();
+
+  // Trusted hub host → allow
+  if (hubHost && originHost === hubHost) return NextResponse.next();
 
   return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 }
