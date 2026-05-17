@@ -95,5 +95,5 @@ jobs:
     steps:
       - name: Trigger Portainer Webhook
         run: |
-          curl -s -X POST "${{ secrets.PORTAINER_WEBHOOK_URL_QUIZZL }}"
+          curl -s -X POST "${{ vars.PORTAINER_WEBHOOK_URL_QUIZZL }}"
           echo "Portainer deployment triggered"
