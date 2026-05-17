@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getSession } from "@/lib/auth/session";
+import { verifyModuleToken } from "@/lib/auth/moduleToken";
 import { z } from "zod";
+
+const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
 
 const CreateSessionSchema = z.object({
   quizId: z.string().cuid(),
@@ -9,16 +12,38 @@ const CreateSessionSchema = z.object({
   gameMode: z.enum(["AUTONOMOUS", "BEAMER"]).default("AUTONOMOUS"),
 });
 
-// POST /api/sessions — teacher creates a quiz session for a lobby
+// POST /api/sessions — creates a quiz session for a lobby
+// Accepts either a teacher session cookie OR a hub server token (Authorization: Bearer <token>)
 export async function POST(req: NextRequest) {
-  const session = await getSession(req);
-  if (!session || session.role !== "teacher") {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   const body = await req.json().catch(() => null);
   const parsed = CreateSessionSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+
+  let teacherId: string;
+
+  const authHeader = req.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const payload = verifyModuleToken(authHeader.slice(7), MODULE_SECRET);
+    if (!payload || payload.role !== "hub") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    teacherId = payload.sub;
+  } else {
+    const session = await getSession(req);
+    if (!session || session.role !== "teacher") {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    teacherId = session.sub;
+
+    // Ownership check only for direct teacher requests (hub is trusted)
+    const quiz = await prisma.quiz.findUnique({ where: { id: parsed.data.quizId } });
+    if (!quiz) return NextResponse.json({ error: "Quiz nicht gefunden" }, { status: 404 });
+    const canUse =
+      quiz.teacherId === teacherId ||
+      quiz.visibility === "PUBLIC" ||
+      (quiz.visibility === "SCHOOL" && quiz.schoolId === session.schoolId);
+    if (!canUse) return NextResponse.json({ error: "Kein Zugriff auf dieses Quiz" }, { status: 403 });
+  }
 
   // Only one active session per lobby
   const existing = await prisma.quizSession.findFirst({
@@ -28,22 +53,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Bereits eine aktive Session für diesen Raum" }, { status: 409 });
   }
 
-  const quiz = await prisma.quiz.findUnique({ where: { id: parsed.data.quizId } });
-  if (!quiz) return NextResponse.json({ error: "Quiz nicht gefunden" }, { status: 404 });
-
-  // Teachers can only use their own or public/school quizzes
-  const canUse =
-    quiz.teacherId === session.sub ||
-    quiz.visibility === "PUBLIC" ||
-    (quiz.visibility === "SCHOOL" && quiz.schoolId === session.schoolId);
-
-  if (!canUse) return NextResponse.json({ error: "Kein Zugriff auf dieses Quiz" }, { status: 403 });
-
   const quizSession = await prisma.quizSession.create({
     data: {
       quizId: parsed.data.quizId,
       lobbyId: parsed.data.lobbyId,
-      teacherId: session.sub,
+      teacherId,
       gameMode: parsed.data.gameMode,
     },
   });

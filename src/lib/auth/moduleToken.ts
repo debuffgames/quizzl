@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "crypto";
 
 export interface ModuleTokenPayload {
   sub: string;
-  role: "teacher" | "student";
+  role: "teacher" | "student" | "hub";
   lobbyId: string;
   schoolId?: string;
   firstName?: string;

@@ -195,7 +195,7 @@ function TeacherContent() {
       sessionIdRef.current = session.id;
       connectSocket(session.id, "lobby");
       // Tell hub the quiz was selected
-      window.parent.postMessage({ type: "QUIZ_SELECTED", quizId: selectedQuiz.id }, "*");
+      window.parent.postMessage({ type: "QUIZ_SELECTED", quizId: selectedQuiz.id, gameMode }, "*");
     } finally {
       setCreatingSession(false);
     }
