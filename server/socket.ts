@@ -27,9 +27,7 @@ httpServer.on("request", (req: IncomingMessage, res: ServerResponse) => {
   const url = req.url ?? "";
   const match = url.match(/^\/internal\/sessions\/([^/]+)\/end$/);
   if (req.method !== "POST" || !match) {
-    res.writeHead(404);
-    res.end();
-    return;
+    return; // not our endpoint — let Socket.io handle it
   }
 
   if (req.headers.authorization !== `Bearer ${INTERNAL_SECRET}`) {
