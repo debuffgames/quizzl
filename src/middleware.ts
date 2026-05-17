@@ -15,8 +15,11 @@ export function middleware(req: NextRequest) {
   if (!origin) return NextResponse.next();
 
   // Same origin as quizzl itself → allow
-  const host = req.headers.get("host");
-  const ownOrigin = `${req.nextUrl.protocol}//${host}`;
+  // Use x-forwarded-proto (set by Traefik) — req.nextUrl.protocol is
+  // always http: behind a reverse proxy and would cause a false mismatch.
+  const proto = req.headers.get("x-forwarded-proto") ?? req.nextUrl.protocol.replace(":", "");
+  const host = req.headers.get("host") ?? "";
+  const ownOrigin = `${proto}://${host}`;
   if (origin === ownOrigin) return NextResponse.next();
 
   // Trusted hub origin → allow
