@@ -15,10 +15,27 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       return;
     }
 
-    const session = sessionManager.getByLobby(data.lobbyId);
+    let session = sessionManager.getByLobby(data.lobbyId);
     if (!session) {
-      ack?.({ ok: false, error: "Keine aktive Session für diesen Raum" });
-      return;
+      const dbSession = await prisma.quizSession.findFirst({
+        where: { lobbyId: data.lobbyId, status: { not: "ENDED" } },
+        orderBy: { createdAt: "desc" },
+      });
+      if (!dbSession) {
+        ack?.({ ok: false, error: "Keine aktive Session für diesen Raum" });
+        return;
+      }
+      session = sessionManager.createSession({
+        sessionId: dbSession.id,
+        lobbyId: dbSession.lobbyId,
+        quizId: dbSession.quizId,
+        teacherId: dbSession.teacherId,
+        teacherSocketId: null,
+        beamerSocketId: null,
+        gameMode: dbSession.gameMode as "AUTONOMOUS" | "BEAMER",
+        currentQuestionIndex: dbSession.currentQuestionIndex,
+        questionTimerEnd: null,
+      });
     }
 
     sessionManager.addParticipant(session.sessionId, {
