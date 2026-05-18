@@ -38,6 +38,14 @@ interface AnswerDist { answerId: string; count: number; isCorrect: boolean; }
 interface TopScore { rank: number; displayName: string; score: number; }
 
 type GameMode = "AUTONOMOUS" | "BEAMER";
+
+const BEAMER_STYLES = [
+  { bg: "bg-red-500",    text: "text-white",     symbol: "▲" },
+  { bg: "bg-blue-500",   text: "text-white",     symbol: "●" },
+  { bg: "bg-yellow-400", text: "text-gray-900",  symbol: "■" },
+  { bg: "bg-green-500",  text: "text-white",     symbol: "◆" },
+] as const;
+
 type Phase =
   | "loading" | "error"
   | "quiz-list" | "quiz-editor"
@@ -325,7 +333,7 @@ function TeacherContent() {
       <Layout>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           {isStandalone
-            ? <img src="/logo.png" alt="Quizzl" className="h-24 w-auto object-contain" />
+            ? <img src="/logo.png" alt="Quizzl" className="h-48 w-auto object-contain" />
             : <h1 className="font-bold text-lg">Quizzl</h1>
           }
           <button onClick={() => openEditor(null)} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700">
@@ -574,6 +582,29 @@ function TeacherContent() {
           {currentQ && (
             <div>
               <p className="font-semibold text-sm leading-snug mb-3">{currentQ.text}</p>
+
+              {/* BEAMER: Antwortoptionen als farbige Kacheln */}
+              {gameMode === "BEAMER" && (
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  {currentQ.answers.map((a) => {
+                    const style = BEAMER_STYLES[a.sortOrder] ?? BEAMER_STYLES[0];
+                    const d = distribution?.find((x) => x.answerId === a.id);
+                    return (
+                      <div
+                        key={a.id}
+                        className={`rounded-xl p-2.5 ${style.bg} ${style.text} ${revealed && d?.isCorrect ? "ring-2 ring-white ring-offset-1 ring-offset-gray-100" : ""}`}
+                      >
+                        <span className="text-base leading-none block">{style.symbol}</span>
+                        <span className="text-xs leading-tight block mt-1 line-clamp-2">{a.text}</span>
+                        {revealed && d && (
+                          <span className="text-xs font-bold block mt-1 opacity-90">{d.count} ×</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Response progress */}
               {responseCount && (
                 <div className="w-full bg-gray-100 rounded-full h-2 mb-4">
@@ -583,7 +614,7 @@ function TeacherContent() {
                   />
                 </div>
               )}
-              {/* Answer distribution */}
+              {/* Answer distribution (bar chart) */}
               {distribution && (
                 <div className="space-y-2">
                   {currentQ.answers.map((a) => {
@@ -598,6 +629,11 @@ function TeacherContent() {
                             style={{ width: revealed ? `${pct}%` : "0%" }}
                           />
                           <div className="relative flex items-center h-full px-3 gap-2">
+                            {gameMode === "BEAMER" && (
+                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold shrink-0 ${BEAMER_STYLES[a.sortOrder]?.bg ?? "bg-gray-400"} ${BEAMER_STYLES[a.sortOrder]?.text ?? "text-white"}`}>
+                                {BEAMER_STYLES[a.sortOrder]?.symbol ?? ""}
+                              </span>
+                            )}
                             <span className="text-xs flex-1 truncate">{a.text}</span>
                             {revealed && <span className="text-xs font-semibold text-gray-600">{count}</span>}
                             {d?.isCorrect && <span className="text-green-600 text-xs">✓</span>}
