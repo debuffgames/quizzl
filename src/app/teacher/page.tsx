@@ -99,8 +99,9 @@ function TeacherContent() {
   }, []);
 
   // Auth + initial state detection
+  // lobbyId is optional: when empty this is standalone (hub /quizzl page), no session check needed
   useEffect(() => {
-    if (!lobbyId || !token) { setError("Fehlende Parameter"); setPhase("error"); return; }
+    if (!token) { setError("Fehlende Parameter"); setPhase("error"); return; }
 
     fetch("/api/auth/module-token", {
       method: "POST",
@@ -110,15 +111,20 @@ function TeacherContent() {
     }).then(async (res) => {
       if (!res.ok) { setError("Authentifizierung fehlgeschlagen"); setPhase("error"); return; }
 
+      if (!lobbyId) {
+        // Standalone mode: just show quiz management
+        await fetchQuizzes();
+        setPhase("quiz-list");
+        return;
+      }
+
       // Check for existing active session
       const activeRes = await fetch(`/api/sessions/active?lobbyId=${encodeURIComponent(lobbyId)}`, { credentials: "include" });
       const activeSession = await activeRes.json();
 
       if (activeSession?.id) {
-        // Reconnect to existing session
         setSessionId(activeSession.id);
         sessionIdRef.current = activeSession.id;
-        // gameMode is managed by the hub config — no local state needed
         if (activeSession.quiz?.title) {
           setSelectedQuiz({ id: activeSession.quizId, title: activeSession.quiz.title, description: null, visibility: "", _count: { questions: 0 } });
         }
@@ -314,10 +320,14 @@ function TeacherContent() {
   // ── QUIZ LIST ──
   if (phase === "quiz-list") {
     const list = listTab === "own" ? ownQuizzes : publicQuizzes;
+    const isStandalone = !lobbyId;
     return (
       <Layout>
         <header className="flex items-center justify-between px-4 py-3 border-b">
-          <h1 className="font-bold text-lg">Quizzl</h1>
+          {isStandalone
+            ? <img src="/quizl_edo.png" alt="Quizzl" className="h-8 w-auto object-contain" />
+            : <h1 className="font-bold text-lg">Quizzl</h1>
+          }
           <button onClick={() => openEditor(null)} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700">
             + Neu
           </button>
@@ -348,14 +358,22 @@ function TeacherContent() {
                     Bearbeiten
                   </button>
                 )}
-                <button
-                  onClick={() => {
-                    setSelectedQuiz(q);
-                    window.parent.postMessage({ type: "QUIZ_SELECTED", quizId: q.id }, "*");
-                  }}
-                  className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700">
-                  Auswählen
-                </button>
+                {isStandalone ? (
+                  <button
+                    onClick={() => window.parent.postMessage({ type: "START_ROOM", quizId: q.id }, "*")}
+                    className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700">
+                    ▶ Raum starten
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setSelectedQuiz(q);
+                      window.parent.postMessage({ type: "QUIZ_SELECTED", quizId: q.id }, "*");
+                    }}
+                    className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700">
+                    Auswählen
+                  </button>
+                )}
               </div>
             </div>
           ))}
