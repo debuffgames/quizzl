@@ -325,7 +325,7 @@ function TeacherContent() {
       <Layout>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           {isStandalone
-            ? <img src="/logo.png" alt="Quizzl" className="h-8 w-auto object-contain" />
+            ? <img src="/logo.png" alt="Quizzl" className="h-24 w-auto object-contain" />
             : <h1 className="font-bold text-lg">Quizzl</h1>
           }
           <button onClick={() => openEditor(null)} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700">
