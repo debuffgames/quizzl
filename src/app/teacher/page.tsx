@@ -73,7 +73,7 @@ function TeacherContent() {
 
   // Quiz selection
   const [selectedQuiz, setSelectedQuiz] = useState<QuizSummary | null>(null);
-  const [gameMode] = useState<GameMode>("AUTONOMOUS");
+  const [gameMode, setGameMode] = useState<GameMode>("AUTONOMOUS");
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Lobby state
@@ -141,8 +141,9 @@ function TeacherContent() {
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; error?: string }) => {
+      socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; error?: string }) => {
         if (!ack.ok) { setError(ack.error ?? "Socket-Verbindung fehlgeschlagen"); setPhase("error"); return; }
+        if (ack.gameMode === "BEAMER" || ack.gameMode === "AUTONOMOUS") setGameMode(ack.gameMode);
         setPhase(initialPhase);
       });
     });
@@ -610,14 +611,20 @@ function TeacherContent() {
         </div>
 
         <div className="px-4 pb-4 flex flex-col gap-2">
-          {!revealed ? (
-            <button onClick={revealAnswer} className="w-full py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 transition-colors">
-              Antwort aufdecken
-            </button>
+          {gameMode === "BEAMER" ? (
+            <>
+              {!revealed ? (
+                <button onClick={revealAnswer} className="w-full py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 transition-colors">
+                  Antwort aufdecken
+                </button>
+              ) : (
+                <button onClick={nextQuestion} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
+                  Nächste Frage →
+                </button>
+              )}
+            </>
           ) : (
-            <button onClick={nextQuestion} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-              Nächste Frage →
-            </button>
+            <p className="text-center text-xs text-gray-400 py-1">Quiz läuft automatisch</p>
           )}
           <button onClick={endSession} className="w-full py-2 text-red-500 text-sm hover:bg-red-50 rounded-xl transition-colors">
             Session beenden

@@ -104,7 +104,12 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(session.sessionId);
     socket.join(`${session.sessionId}:teacher`);
 
-    ack?.({ ok: true, sessionId: session.sessionId });
+    ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode });
+
+    // If session is already active, send the current question to the teacher
+    if (session.currentQuestionIndex >= 0) {
+      await sendCurrentQuestion(io, socket.id, session, sessionManager);
+    }
   });
 
   // Beamer joins
