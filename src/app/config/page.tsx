@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 interface QuizSummary {
@@ -18,14 +18,11 @@ export default function ConfigPage() {
 function ConfigContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
-  const lobbyId = searchParams.get("lobbyId") ?? "";
 
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [quizId, setQuizId] = useState("");
   const [gameMode, setGameMode] = useState<GameMode>("AUTONOMOUS");
-  const tokenRef = useRef(token);
-
   // Auth + load quizzes
   useEffect(() => {
     if (!token) { setLoading(false); return; }
@@ -71,7 +68,7 @@ function ConfigContent() {
   };
 
   const openEditor = () => {
-    window.open(`/teacher?token=${encodeURIComponent(tokenRef.current)}&lobbyId=${encodeURIComponent(lobbyId)}`, "_blank");
+    window.parent.postMessage({ type: "OPEN_EDITOR" }, "*");
   };
 
   return (
