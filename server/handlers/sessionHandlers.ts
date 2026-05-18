@@ -68,7 +68,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
   });
 
   // Teacher joins to control the session
-  socket.on("quiz:teacherJoin", async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; sessionId?: string; error?: string }) => void) => {
+  socket.on("quiz:teacherJoin", async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; sessionId?: string; gameMode?: string; error?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "teacher") {
       ack?.({ ok: false, error: "Ungültiger Token" });
