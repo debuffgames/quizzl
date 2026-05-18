@@ -41,7 +41,6 @@ type GameMode = "AUTONOMOUS" | "BEAMER";
 type Phase =
   | "loading" | "error"
   | "quiz-list" | "quiz-editor"
-  | "session-start"
   | "lobby"
   | "active" | "ended";
 
@@ -72,10 +71,9 @@ function TeacherContent() {
   const [editQuestions, setEditQuestions] = useState<QuestionInput[]>([]);
   const [savingQuiz, setSavingQuiz] = useState(false);
 
-  // Session creation
+  // Quiz selection
   const [selectedQuiz, setSelectedQuiz] = useState<QuizSummary | null>(null);
-  const [gameMode, setGameMode] = useState<GameMode>("AUTONOMOUS");
-  const [creatingSession, setCreatingSession] = useState(false);
+  const [gameMode] = useState<GameMode>("AUTONOMOUS");
   const [sessionId, setSessionId] = useState<string | null>(null);
 
   // Lobby state
@@ -120,7 +118,7 @@ function TeacherContent() {
         // Reconnect to existing session
         setSessionId(activeSession.id);
         sessionIdRef.current = activeSession.id;
-        setGameMode(activeSession.gameMode);
+        // gameMode is managed by the hub config — no local state needed
         if (activeSession.quiz?.title) {
           setSelectedQuiz({ id: activeSession.quizId, title: activeSession.quiz.title, description: null, visibility: "", _count: { questions: 0 } });
         }
@@ -173,33 +171,6 @@ function TeacherContent() {
   }, [lobbyId, token, participants.length]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────
-
-  const createSession = async () => {
-    if (!selectedQuiz || creatingSession) return;
-    setCreatingSession(true);
-    try {
-      const res = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ quizId: selectedQuiz.id, lobbyId, gameMode }),
-        credentials: "include",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error ?? "Fehler beim Erstellen der Session");
-        setPhase("error");
-        return;
-      }
-      const session = await res.json();
-      setSessionId(session.id);
-      sessionIdRef.current = session.id;
-      connectSocket(session.id, "lobby");
-      // Tell hub the quiz was selected
-      window.parent.postMessage({ type: "QUIZ_SELECTED", quizId: selectedQuiz.id, gameMode }, "*");
-    } finally {
-      setCreatingSession(false);
-    }
-  };
 
   const nextQuestion = () => socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
   const revealAnswer = () => socketRef.current?.emit(QUIZ_EVENTS.REVEAL_ANSWER);
@@ -377,7 +348,10 @@ function TeacherContent() {
                   </button>
                 )}
                 <button
-                  onClick={() => { setSelectedQuiz(q); setPhase("session-start"); }}
+                  onClick={() => {
+                    setSelectedQuiz(q);
+                    window.parent.postMessage({ type: "QUIZ_SELECTED", quizId: q.id }, "*");
+                  }}
                   className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded hover:bg-indigo-700">
                   Auswählen
                 </button>
@@ -517,44 +491,6 @@ function TeacherContent() {
   }
 
   // ── SESSION START ──
-  if (phase === "session-start") {
-    return (
-      <Layout>
-        <header className="flex items-center gap-3 px-4 py-3 border-b">
-          <button onClick={() => setPhase("quiz-list")} className="text-gray-500 hover:text-gray-800">←</button>
-          <h1 className="font-bold text-lg flex-1">Session starten</h1>
-        </header>
-        <div className="flex-1 flex flex-col justify-center px-6 gap-6">
-          <div className="bg-gray-50 rounded-xl p-4">
-            <p className="text-xs text-gray-400 mb-1">Ausgewähltes Quiz</p>
-            <p className="font-semibold">{selectedQuiz?.title}</p>
-            <p className="text-sm text-gray-500">{selectedQuiz?._count.questions} Fragen</p>
-          </div>
-
-          <div>
-            <p className="text-sm font-medium text-gray-700 mb-2">Spielmodus</p>
-            <div className="grid grid-cols-2 gap-3">
-              {(["AUTONOMOUS", "BEAMER"] as const).map((m) => (
-                <button key={m} onClick={() => setGameMode(m)}
-                  className={`p-4 border-2 rounded-xl text-left transition-all ${gameMode === m ? "border-indigo-500 bg-indigo-50" : "border-gray-200 hover:border-gray-300"}`}>
-                  <p className="font-semibold text-sm">{m === "AUTONOMOUS" ? "Autonom" : "Beamer"}</p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    {m === "AUTONOMOUS" ? "Schüler sehen Fragen & Antworten selbst" : "Fragen auf Beamer, Schüler buzzen mit Farben"}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <button onClick={createSession} disabled={creatingSession}
-            className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-50 transition-colors">
-            {creatingSession ? "Wird gestartet..." : "Session erstellen →"}
-          </button>
-        </div>
-      </Layout>
-    );
-  }
-
   // ── LOBBY (WAITING ROOM) ──
   if (phase === "lobby") {
     return (

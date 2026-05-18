@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getSession } from "@/lib/auth/session";
+import { verifyModuleToken } from "@/lib/auth/moduleToken";
 import { z } from "zod";
+
+const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
+const HUB_ORIGIN = process.env.HUB_ORIGIN ?? "";
 
 const CreateQuizSchema = z.object({
   title: z.string().min(1).max(200),
@@ -10,43 +14,71 @@ const CreateQuizSchema = z.object({
   visibility: z.enum(["PRIVATE", "SCHOOL", "PUBLIC"]).default("PRIVATE"),
 });
 
+function corsHeaders(): Record<string, string> {
+  if (!HUB_ORIGIN) return {};
+  return {
+    "Access-Control-Allow-Origin": HUB_ORIGIN,
+    "Access-Control-Allow-Credentials": "true",
+    "Access-Control-Allow-Headers": "Authorization, Content-Type",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  };
+}
+
+// CORS preflight for hub cross-origin requests
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: corsHeaders() });
+}
+
 // GET /api/quizzes — list own + accessible quizzes
+// Accepts cookie session OR Bearer module token (teacher role) for hub integration
 export async function GET(req: NextRequest) {
-  const session = await getSession(req);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  let sub: string;
+  let schoolId: string | undefined;
+
+  const cookieSession = await getSession(req);
+  if (cookieSession) {
+    sub = cookieSession.sub;
+    schoolId = cookieSession.schoolId;
+  } else {
+    const authHeader = req.headers.get("authorization");
+    if (authHeader?.startsWith("Bearer ")) {
+      const payload = verifyModuleToken(authHeader.slice(7), MODULE_SECRET);
+      if (!payload || payload.role !== "teacher") {
+        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      }
+      sub = payload.sub;
+      schoolId = payload.schoolId;
+    } else {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
 
   const { searchParams } = new URL(req.url);
-  const scope = searchParams.get("scope") ?? "own"; // "own" | "school" | "public"
+  const scope = searchParams.get("scope") ?? "own";
 
-  if (scope === "own") {
-    const quizzes = await prisma.quiz.findMany({
-      where: { teacherId: session.sub },
+  let quizzes;
+  if (scope === "school" && schoolId) {
+    quizzes = await prisma.quiz.findMany({
+      where: { visibility: "SCHOOL", schoolId },
       include: { _count: { select: { questions: true } } },
       orderBy: { updatedAt: "desc" },
     });
-    return NextResponse.json(quizzes);
-  }
-
-  if (scope === "school" && session.schoolId) {
-    const quizzes = await prisma.quiz.findMany({
-      where: { visibility: "SCHOOL", schoolId: session.schoolId },
-      include: { _count: { select: { questions: true } } },
-      orderBy: { updatedAt: "desc" },
-    });
-    return NextResponse.json(quizzes);
-  }
-
-  if (scope === "public") {
-    const quizzes = await prisma.quiz.findMany({
+  } else if (scope === "public") {
+    quizzes = await prisma.quiz.findMany({
       where: { visibility: "PUBLIC" },
       include: { _count: { select: { questions: true } } },
       orderBy: { updatedAt: "desc" },
       take: 100,
     });
-    return NextResponse.json(quizzes);
+  } else {
+    quizzes = await prisma.quiz.findMany({
+      where: { teacherId: sub },
+      include: { _count: { select: { questions: true } } },
+      orderBy: { updatedAt: "desc" },
+    });
   }
 
-  return NextResponse.json([]);
+  return NextResponse.json(quizzes, { headers: corsHeaders() });
 }
 
 // POST /api/quizzes — create new quiz
