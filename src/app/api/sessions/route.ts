@@ -5,6 +5,7 @@ import { verifyModuleToken } from "@/lib/auth/moduleToken";
 import { z } from "zod";
 
 const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
+const SOCKET_INTERNAL_URL = process.env.QUIZZL_SOCKET_INTERNAL_URL ?? "http://quizzl-socket:4001";
 
 const CreateSessionSchema = z.object({
   quizId: z.string().cuid(),
@@ -61,6 +62,14 @@ export async function POST(req: NextRequest) {
       gameMode: parsed.data.gameMode,
     },
   });
+
+  // For AUTONOMOUS sessions, signal the socket server to auto-start after students connect
+  if (quizSession.gameMode === "AUTONOMOUS") {
+    fetch(`${SOCKET_INTERNAL_URL}/internal/sessions/${quizSession.lobbyId}/start`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${MODULE_SECRET}` },
+    }).catch((err) => console.error("[Sessions] Auto-start signal failed:", err));
+  }
 
   return NextResponse.json(quizSession, { status: 201 });
 }

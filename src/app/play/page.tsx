@@ -71,6 +71,8 @@ function PlayContent() {
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Ref so socket event handlers (stale closures) can read current gameMode
+  const gameModeRef = useRef<"AUTONOMOUS" | "BEAMER">("AUTONOMOUS");
 
   const clearTimer = () => {
     if (timerRef.current) {
@@ -93,7 +95,6 @@ function PlayContent() {
     }, 1000);
   }, []);
 
-  // postMessage helpers
   const notifyReady = () => window.parent.postMessage({ type: "READY" }, "*");
   const notifyProgress = (index: number, total: number, score: number) =>
     window.parent.postMessage({ type: "PROGRESS", progress: total > 0 ? index / total : 0, score }, "*");
@@ -107,7 +108,6 @@ function PlayContent() {
       return;
     }
 
-    // Exchange hub token for session cookie
     fetch("/api/auth/module-token", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -131,7 +131,9 @@ function PlayContent() {
             setPhase("error");
             return;
           }
-          setGameMode((ack.gameMode as "AUTONOMOUS" | "BEAMER") ?? "AUTONOMOUS");
+          const mode = (ack.gameMode as "AUTONOMOUS" | "BEAMER") ?? "AUTONOMOUS";
+          gameModeRef.current = mode;
+          setGameMode(mode);
           setPhase("waiting");
           notifyReady();
         });
@@ -162,12 +164,16 @@ function PlayContent() {
         setReveal(data);
         setFinalScore(data.totalScore);
         setPhase("revealed");
-        if (question) notifyProgress(question.index + 1, question.total, data.totalScore);
+        setQuestion((q) => {
+          if (q) notifyProgress(q.index + 1, q.total, data.totalScore);
+          return q;
+        });
       });
 
       socket.on(QUIZ_EVENTS.SCOREBOARD, (data: { topN: TopScore[] }) => {
         setTopScores(data.topN);
-        setPhase("scoreboard");
+        // In AUTONOMOUS mode the server auto-advances — don't interrupt the revealed/waiting screen
+        if (gameModeRef.current !== "AUTONOMOUS") setPhase("scoreboard");
       });
 
       socket.on(QUIZ_EVENTS.END, (data: { topScores?: TopScore[]; finalRank?: number; totalScore?: number }) => {
@@ -179,7 +185,6 @@ function PlayContent() {
       });
 
       socket.on(QUIZ_EVENTS.PAUSE, () => {
-        setPrevPhase((p) => { return p; });
         setPhase((p) => { setPrevPhase(p); return "paused"; });
         clearTimer();
       });
@@ -217,8 +222,8 @@ function PlayContent() {
       setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
     } else {
       setSelectedIds([id]);
-      // Auto-submit for single choice
-      if (!submitted) {
+      // Auto-submit only in BEAMER mode (tap → instant); AUTONOMOUS uses explicit button
+      if (gameModeRef.current === "BEAMER") {
         setSubmitted(true);
         socketRef.current?.emit(QUIZ_EVENTS.SUBMIT_ANSWER, { questionId: question.id, answerIds: [id] });
         setPhase("answered");
@@ -226,7 +231,7 @@ function PlayContent() {
     }
   };
 
-  // ─── Render helpers ───────────────────────────────────────────────────────
+  // ─── Full-screen states ────────────────────────────────────────────────────
 
   if (phase === "loading") return <Screen><Spinner /><p className="mt-4 text-gray-500">Verbinde...</p></Screen>;
   if (phase === "error") return <Screen><p className="text-red-600 font-semibold text-lg">{error}</p></Screen>;
@@ -273,9 +278,10 @@ function PlayContent() {
 
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
+    const isBeamerReveal = gameMode === "BEAMER";
     return (
       <Screen>
-        <div className={`text-5xl mb-3`}>{correct ? "✓" : "✗"}</div>
+        <div className="text-5xl mb-3">{correct ? "✓" : "✗"}</div>
         <p className={`text-2xl font-bold mb-1 ${correct ? "text-green-600" : "text-red-500"}`}>
           {correct ? "Richtig!" : "Falsch!"}
         </p>
@@ -288,10 +294,10 @@ function PlayContent() {
               const wasSelected = selectedIds.includes(a.id);
               const color = ANSWER_COLORS[i % ANSWER_COLORS.length];
               return (
-                <div key={a.id} className={`flex items-center gap-3 p-2 rounded-lg border-2 ${
+                <div key={a.id} className={`flex items-center gap-3 p-3 rounded-lg border-2 ${
                   isCorrect ? "border-green-400 bg-green-50" : wasSelected ? "border-red-300 bg-red-50" : "border-gray-200 bg-gray-50"
                 }`}>
-                  {gameMode === "BEAMER" && <span className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold ${color.bg} ${color.text}`}>{color.shape}</span>}
+                  {isBeamerReveal && <span className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold ${color.bg} ${color.text}`}>{color.shape}</span>}
                   {a.text && <span className="flex-1 text-sm">{a.text}</span>}
                   {isCorrect && <span className="text-green-500 text-sm font-bold">✓</span>}
                 </div>
@@ -299,20 +305,29 @@ function PlayContent() {
             })}
           </div>
         )}
+        {/* In AUTONOMOUS mode, show "Weiter" to dismiss reveal screen while server prepares next question */}
+        {!isBeamerReveal && (
+          <button
+            onClick={() => setPhase("waiting")}
+            className="mt-6 px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"
+          >
+            Weiter →
+          </button>
+        )}
       </Screen>
     );
   }
 
   if (!question) return <Screen><Spinner /></Screen>;
 
-  // Question / answered phase
+  // ─── Question / answered phase ─────────────────────────────────────────────
+
   const isBeamer = gameMode === "BEAMER";
-  const isMultiple = question.answerType === "MULTIPLE_CHOICE";
 
   return (
-    <div className="flex flex-col h-full min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b">
+      <div className="flex items-center justify-between px-4 py-3 bg-white border-b shrink-0">
         <span className="text-sm text-gray-500">Frage {question.index + 1}/{question.total}</span>
         {timeLeft !== null && (
           <span className={`text-lg font-bold tabular-nums ${timeLeft <= 5 ? "text-red-500" : "text-gray-700"}`}>
@@ -322,25 +337,23 @@ function PlayContent() {
       </div>
 
       {/* Question text */}
-      {!isBeamer && question.text && (
-        <div className="px-4 py-5 text-center">
-          <p className="text-xl font-semibold leading-snug">{question.text}</p>
-        </div>
-      )}
-      {isBeamer && (
-        <div className="px-4 py-5 text-center">
+      <div className="px-4 py-5 text-center shrink-0">
+        {isBeamer ? (
           <p className="text-gray-400 text-sm">Schau auf den Beamer</p>
-        </div>
-      )}
-
-      {/* Answer buttons */}
-      <div className="flex-1 px-4 pb-4 grid grid-cols-2 gap-3 content-start">
-        {phase === "answered" ? (
-          <div className="col-span-2 flex items-center justify-center h-24">
-            <p className="text-gray-500 text-lg">Warte auf Auflösung...</p>
-          </div>
         ) : (
-          question.answers.map((a, i) => {
+          question.text && <p className="text-xl font-semibold leading-snug">{question.text}</p>
+        )}
+      </div>
+
+      {/* Answer area */}
+      {phase === "answered" ? (
+        <div className="flex-1 flex items-center justify-center">
+          <p className="text-gray-500 text-lg">Warte auf Auflösung...</p>
+        </div>
+      ) : isBeamer ? (
+        // BEAMER: 2x2 colored shape buttons, single-choice auto-submits on tap
+        <div className="flex-1 px-4 pb-4 grid grid-cols-2 gap-3 content-start">
+          {question.answers.map((a, i) => {
             const color = ANSWER_COLORS[i % ANSWER_COLORS.length];
             const isSelected = selectedIds.includes(a.id);
             return (
@@ -355,16 +368,47 @@ function PlayContent() {
                 `}
               >
                 <span className="text-2xl">{color.shape}</span>
-                {!isBeamer && a.text && <span className="text-sm text-center leading-tight">{a.text}</span>}
               </button>
             );
-          })
-        )}
-      </div>
+          })}
+        </div>
+      ) : (
+        // AUTONOMOUS: text-only buttons stacked vertically, manual submit
+        <div className="flex-1 px-4 pb-2 flex flex-col gap-3">
+          {question.answers.map((a) => {
+            const isSelected = selectedIds.includes(a.id);
+            return (
+              <button
+                key={a.id}
+                onClick={() => toggleAnswer(a.id)}
+                disabled={submitted}
+                className={`w-full px-4 py-4 rounded-xl border-2 text-left font-medium text-sm transition-colors
+                  ${isSelected
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-800"
+                    : "border-gray-200 bg-white text-gray-800 hover:border-gray-300"}
+                  ${submitted ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
+                `}
+              >
+                {a.text}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
-      {/* Submit button for multiple choice */}
-      {isMultiple && phase === "question" && selectedIds.length > 0 && (
-        <div className="px-4 pb-4">
+      {/* Submit — AUTONOMOUS: for any selection; BEAMER: only for MULTIPLE_CHOICE */}
+      {!isBeamer && phase === "question" && selectedIds.length > 0 && (
+        <div className="px-4 pb-6 shrink-0">
+          <button
+            onClick={submitAnswer}
+            className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"
+          >
+            Antwort einloggen
+          </button>
+        </div>
+      )}
+      {isBeamer && question.answerType === "MULTIPLE_CHOICE" && phase === "question" && selectedIds.length > 0 && (
+        <div className="px-4 pb-4 shrink-0">
           <button
             onClick={submitAnswer}
             className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"

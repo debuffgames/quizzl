@@ -1,10 +1,11 @@
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { Server } from "socket.io";
 import { registerSessionHandlers } from "./handlers/sessionHandlers";
-import { registerQuizHandlers } from "./handlers/quizHandlers";
+import { registerQuizHandlers, advanceToNextQuestion } from "./handlers/quizHandlers";
 import { registerResponseHandlers } from "./handlers/responseHandlers";
 import { sessionManager } from "./sessionManager";
 import { QUIZ_EVENTS } from "../src/lib/socket/events";
+import { prisma } from "../src/lib/db/prisma";
 
 const HUB_ORIGIN = process.env.HUB_ORIGIN ?? "http://localhost:3000";
 const PORT = parseInt(process.env.SOCKET_PORT ?? "4001", 10);
@@ -21,14 +22,15 @@ const io = new Server(httpServer, {
   transports: ["websocket", "polling"],
 });
 
-// Internal HTTP endpoint: POST /internal/sessions/:lobbyId/end
-// Called by the Next.js app after marking a session ENDED in the DB.
+// Internal HTTP endpoints — only POST /internal/... are matched; everything else is left to Socket.io
 httpServer.on("request", (req: IncomingMessage, res: ServerResponse) => {
   const url = req.url ?? "";
-  const match = url.match(/^\/internal\/sessions\/([^/]+)\/end$/);
-  if (req.method !== "POST" || !match) {
-    return; // not our endpoint — let Socket.io handle it
-  }
+  if (req.method !== "POST" || !url.startsWith("/internal/sessions/")) return;
+
+  const endMatch = url.match(/^\/internal\/sessions\/([^/]+)\/end$/);
+  const startMatch = url.match(/^\/internal\/sessions\/([^/]+)\/start$/);
+
+  if (!endMatch && !startMatch) return;
 
   if (req.headers.authorization !== `Bearer ${INTERNAL_SECRET}`) {
     res.writeHead(401);
@@ -36,19 +38,69 @@ httpServer.on("request", (req: IncomingMessage, res: ServerResponse) => {
     return;
   }
 
-  const lobbyId = match[1];
-  const session = sessionManager.getByLobby(lobbyId);
-  if (session) {
-    if (session.questionTimerHandle) {
-      clearTimeout(session.questionTimerHandle);
+  // POST /internal/sessions/:lobbyId/end
+  if (endMatch) {
+    const lobbyId = endMatch[1];
+    const session = sessionManager.getByLobby(lobbyId);
+    if (session) {
+      if (session.questionTimerHandle) {
+        clearTimeout(session.questionTimerHandle);
+      }
+      io.to(session.sessionId).emit(QUIZ_EVENTS.END, { reason: "hub_stopped" });
+      sessionManager.endSession(session.sessionId);
+      console.log(`[Quizzl] Session for lobby ${lobbyId} ended by hub`);
     }
-    io.to(session.sessionId).emit(QUIZ_EVENTS.END, { reason: "hub_stopped" });
-    sessionManager.endSession(session.sessionId);
-    console.log(`[Quizzl] Session for lobby ${lobbyId} ended by hub`);
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
   }
 
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ ok: true }));
+  // POST /internal/sessions/:lobbyId/start — AUTONOMOUS auto-start first question
+  if (startMatch) {
+    const lobbyId = startMatch[1];
+    console.log(`[Quizzl] Auto-start scheduled for lobby ${lobbyId}`);
+
+    // Fire-and-forget: give students 3 seconds to connect, then start first question
+    setTimeout(async () => {
+      try {
+        let session = sessionManager.getByLobby(lobbyId);
+        if (!session) {
+          // Students may not have joined yet — create session in RAM from DB
+          const dbSession = await prisma.quizSession.findFirst({
+            where: { lobbyId, status: { not: "ENDED" } },
+            orderBy: { createdAt: "desc" },
+          });
+          if (!dbSession) {
+            console.log(`[Quizzl] Auto-start: no DB session found for lobby ${lobbyId}`);
+            return;
+          }
+          session = sessionManager.createSession({
+            sessionId: dbSession.id,
+            lobbyId: dbSession.lobbyId,
+            quizId: dbSession.quizId,
+            teacherId: dbSession.teacherId,
+            teacherSocketId: null,
+            beamerSocketId: null,
+            gameMode: dbSession.gameMode as "AUTONOMOUS" | "BEAMER",
+            currentQuestionIndex: dbSession.currentQuestionIndex,
+            questionTimerEnd: null,
+          });
+        }
+        if (session.currentQuestionIndex >= 0) {
+          console.log(`[Quizzl] Auto-start: session already started for lobby ${lobbyId}`);
+          return;
+        }
+        await advanceToNextQuestion(io, session, sessionManager);
+        console.log(`[Quizzl] Auto-start: first question sent for lobby ${lobbyId}`);
+      } catch (err) {
+        console.error(`[Quizzl] Auto-start error for lobby ${lobbyId}:`, err);
+      }
+    }, 3000);
+
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ ok: true }));
+    return;
+  }
 });
 
 io.on("connection", (socket) => {
