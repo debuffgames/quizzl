@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { getSession } from "@/lib/auth/session";
-import { verifyModuleToken } from "@/lib/auth/moduleToken";
 import { z } from "zod";
-
-const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
-const HUB_ORIGIN = process.env.HUB_ORIGIN ?? "";
 
 const CreateQuizSchema = z.object({
   title: z.string().min(1).max(200),
@@ -14,44 +10,14 @@ const CreateQuizSchema = z.object({
   visibility: z.enum(["PRIVATE", "SCHOOL", "PUBLIC"]).default("PRIVATE"),
 });
 
-function corsHeaders(): Record<string, string> {
-  if (!HUB_ORIGIN) return {};
-  return {
-    "Access-Control-Allow-Origin": HUB_ORIGIN,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "Authorization, Content-Type",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-  };
-}
-
-// CORS preflight for hub cross-origin requests
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: corsHeaders() });
-}
-
 // GET /api/quizzes — list own + accessible quizzes
 // Accepts cookie session OR Bearer module token (teacher role) for hub integration
 export async function GET(req: NextRequest) {
-  let sub: string;
-  let schoolId: string | undefined;
+  const session = await getSession(req);
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const cookieSession = await getSession(req);
-  if (cookieSession) {
-    sub = cookieSession.sub;
-    schoolId = cookieSession.schoolId;
-  } else {
-    const authHeader = req.headers.get("authorization");
-    if (authHeader?.startsWith("Bearer ")) {
-      const payload = verifyModuleToken(authHeader.slice(7), MODULE_SECRET);
-      if (!payload || payload.role !== "teacher") {
-        return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-      }
-      sub = payload.sub;
-      schoolId = payload.schoolId;
-    } else {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const sub = session.sub;
+  const schoolId = session.schoolId;
 
   const { searchParams } = new URL(req.url);
   const scope = searchParams.get("scope") ?? "own";
@@ -78,7 +44,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  return NextResponse.json(quizzes, { headers: corsHeaders() });
+  return NextResponse.json(quizzes);
 }
 
 // POST /api/quizzes — create new quiz

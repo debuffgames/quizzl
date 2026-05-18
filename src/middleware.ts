@@ -7,28 +7,58 @@ function hostname(url: string): string {
   try { return new URL(url).hostname; } catch { return ""; }
 }
 
+function addCors(res: NextResponse, origin: string): NextResponse {
+  res.headers.set("Access-Control-Allow-Origin", origin);
+  res.headers.set("Access-Control-Allow-Credentials", "true");
+  return res;
+}
+
 export function middleware(req: NextRequest) {
-  if (!STATE_CHANGING.has(req.method)) return NextResponse.next();
-
-  // HUB_ORIGIN not configured → skip check (local dev without .env.local)
-  if (!HUB_ORIGIN) return NextResponse.next();
-
   const origin = req.headers.get("origin");
+  const hubHost = HUB_ORIGIN ? hostname(HUB_ORIGIN) : "";
+  const isFromHub = !!(hubHost && origin && hostname(origin) === hubHost);
 
-  // No Origin header = same-origin navigation or server-to-server call → allow
-  if (!origin) return NextResponse.next();
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    const headers: Record<string, string> = {
+      "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type",
+      "Access-Control-Max-Age": "86400",
+    };
+    if (isFromHub && origin) {
+      headers["Access-Control-Allow-Origin"] = origin;
+      headers["Access-Control-Allow-Credentials"] = "true";
+    }
+    return new NextResponse(null, { status: 204, headers });
+  }
 
-  const originHost = hostname(origin);
-  const ownHost = req.headers.get("host") ?? "";
-  const hubHost = hostname(HUB_ORIGIN);
+  // CSRF protection for state-changing requests
+  if (STATE_CHANGING.has(req.method)) {
+    if (!HUB_ORIGIN) {
+      // Dev without HUB_ORIGIN configured — skip CSRF
+      const res = NextResponse.next();
+      return isFromHub && origin ? addCors(res, origin) : res;
+    }
 
-  // Same host as quizzl itself → allow
-  if (originHost === ownHost) return NextResponse.next();
+    if (!origin) {
+      // No Origin = server-to-server call, allow
+      return NextResponse.next();
+    }
 
-  // Trusted hub host → allow
-  if (hubHost && originHost === hubHost) return NextResponse.next();
+    const originHost = hostname(origin);
+    const ownHost = req.headers.get("host") ?? "";
 
-  return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (originHost === ownHost || (hubHost && originHost === hubHost)) {
+      const res = NextResponse.next();
+      return isFromHub && origin ? addCors(res, origin) : res;
+    }
+
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // GET/HEAD — add CORS headers when called from hub
+  const res = NextResponse.next();
+  return isFromHub && origin ? addCors(res, origin) : res;
 }
 
 export const config = {
