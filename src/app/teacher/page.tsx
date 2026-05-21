@@ -58,9 +58,18 @@ function suggestTimer(questionText: string, answers: { text: string }[]): number
 
 type Phase =
   | "loading" | "error"
-  | "quiz-list" | "quiz-editor" | "import"
+  | "quiz-list" | "quiz-editor" | "import" | "bulk-import"
   | "lobby"
   | "active" | "ended";
+
+interface BulkItem {
+  filename: string;
+  title: string;
+  questions: ParsedQuestion[];
+  selected: boolean;
+  expanded: boolean;
+  error?: string;
+}
 
 // ─── Kahoot import parser ──────────────────────────────────────────────────────
 
@@ -219,6 +228,8 @@ function TeacherContent() {
   // Import state
   const [importTitle, setImportTitle] = useState("");
   const [importError, setImportError] = useState("");
+  const [bulkItems, setBulkItems] = useState<BulkItem[]>([]);
+  const [bulkSaving, setBulkSaving] = useState(false);
 
   // Quiz selection
   const [selectedQuiz, setSelectedQuiz] = useState<QuizSummary | null>(null);
@@ -481,24 +492,64 @@ function TeacherContent() {
     setPhase("import");
   };
 
-  const handleImportFile = (file: File) => {
+  const handleImportFiles = (files: FileList | File[]) => {
+    const arr = Array.from(files).filter((f) => /\.(xlsx|xls)$/i.test(f.name));
+    if (arr.length === 0) { setImportError("Keine .xlsx-Dateien gefunden."); return; }
     setImportError("");
-    file.arrayBuffer().then((buf) => {
-      try {
-        const qs = parseKahootXlsx(buf);
-        if (qs.length === 0) { setImportError("Keine Fragen erkannt. Bitte Kahoot-Excel-Export verwenden."); return; }
-        // Pre-fill the editor and jump straight into it
-        const title = importTitle.trim() || file.name.replace(/\.(xlsx|xls)$/i, "");
-        setEditingQuiz(null);
-        setEditTitle(title);
-        setEditDesc("");
-        setEditVisibility("PRIVATE");
-        setEditQuestions(qs);
-        setPhase("quiz-editor");
-      } catch (e) {
-        setImportError(e instanceof Error ? e.message : "Fehler beim Lesen der Datei");
+
+    if (arr.length === 1) {
+      // Single file → pre-fill editor
+      arr[0].arrayBuffer().then((buf) => {
+        try {
+          const qs = parseKahootXlsx(buf);
+          if (qs.length === 0) { setImportError("Keine Fragen erkannt."); return; }
+          const title = importTitle.trim() || arr[0].name.replace(/\.(xlsx|xls)$/i, "");
+          setEditingQuiz(null); setEditTitle(title); setEditDesc("");
+          setEditVisibility("PRIVATE"); setEditQuestions(qs);
+          setPhase("quiz-editor");
+        } catch (e) { setImportError(e instanceof Error ? e.message : "Fehler beim Lesen der Datei"); }
+      });
+      return;
+    }
+
+    // Multiple files → bulk overview
+    Promise.all(arr.map((f) =>
+      f.arrayBuffer().then((buf) => {
+        try {
+          const qs = parseKahootXlsx(buf);
+          return { filename: f.name, title: f.name.replace(/\.(xlsx|xls)$/i, ""), questions: qs, selected: qs.length > 0, expanded: false, error: qs.length === 0 ? "Keine Fragen erkannt" : undefined } as BulkItem;
+        } catch (e) {
+          return { filename: f.name, title: f.name.replace(/\.(xlsx|xls)$/i, ""), questions: [], selected: false, expanded: false, error: e instanceof Error ? e.message : "Fehler" } as BulkItem;
+        }
+      })
+    )).then((items) => { setBulkItems(items); setPhase("bulk-import"); });
+  };
+
+  const saveBulk = async () => {
+    const toSave = bulkItems.filter((it) => it.selected && it.questions.length > 0);
+    if (toSave.length === 0) return;
+    setBulkSaving(true);
+    try {
+      for (const item of toSave) {
+        const res = await fetch("/api/quizzes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: item.title, description: null, visibility: "PRIVATE" }),
+          credentials: "include",
+        });
+        const { id: quizId } = await res.json();
+        for (const [i, q] of item.questions.entries()) {
+          await fetch(`/api/quizzes/${quizId}/questions`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...q, sortOrder: i }),
+            credentials: "include",
+          });
+        }
       }
-    });
+      await fetchQuizzes();
+      setPhase("quiz-list");
+    } finally { setBulkSaving(false); }
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -597,20 +648,101 @@ function TeacherContent() {
             <label
               className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl p-10 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors"
               onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImportFile(f); }}
+              onDrop={(e) => { e.preventDefault(); if (e.dataTransfer.files.length) handleImportFiles(e.dataTransfer.files); }}
             >
               <span className="text-3xl">📂</span>
-              <span className="text-sm text-gray-600 font-medium">Datei hierher ziehen</span>
-              <span className="text-xs text-gray-400">oder klicken zum Auswählen</span>
-              <input type="file" accept=".xlsx,.xls" className="hidden"
-                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }} />
+              <span className="text-sm text-gray-600 font-medium">Dateien hierher ziehen</span>
+              <span className="text-xs text-gray-400">oder klicken zum Auswählen (.xlsx)</span>
+              <input type="file" accept=".xlsx,.xls" multiple className="hidden"
+                onChange={(e) => { if (e.target.files?.length) handleImportFiles(e.target.files); }} />
             </label>
-            <p className="text-xs text-gray-400 mt-2 text-center">Nach dem Einlesen öffnet sich der Editor — Fragen können dann bearbeitet, entfernt oder ergänzt werden.</p>
+            <p className="text-xs text-gray-400 mt-2 text-center">Eine Datei → Editor zum Bearbeiten. Mehrere Dateien → Massenimport-Übersicht.</p>
           </div>
 
           {importError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{importError}</div>
           )}
+        </div>
+      </Layout>
+    );
+  }
+
+  // ── BULK IMPORT ──
+  if (phase === "bulk-import") {
+    const selectedCount = bulkItems.filter((it) => it.selected).length;
+    const allSelected = bulkItems.every((it) => it.selected || it.error);
+    return (
+      <Layout>
+        <header className="flex items-center gap-3 px-4 py-3 border-b">
+          <button onClick={() => setPhase("import")} className="text-gray-500 hover:text-gray-800">←</button>
+          <h1 className="font-bold text-lg flex-1">Massenimport</h1>
+          <button
+            onClick={() => setBulkItems((prev) => prev.map((it) => ({ ...it, selected: it.error ? false : !allSelected })))}
+            className="text-xs text-indigo-600 hover:underline"
+          >
+            {allSelected ? "Alle abwählen" : "Alle auswählen"}
+          </button>
+        </header>
+
+        <div className="flex-1 overflow-y-auto divide-y">
+          {bulkItems.map((item, idx) => (
+            <div key={idx} className={`px-4 py-3 ${item.error ? "opacity-50" : ""}`}>
+              <div className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={item.selected}
+                  disabled={!!item.error}
+                  onChange={(e) => setBulkItems((prev) => prev.map((it, i) => i === idx ? { ...it, selected: e.target.checked } : it))}
+                  className="mt-1 cursor-pointer"
+                />
+                <div className="flex-1 min-w-0">
+                  {item.error ? (
+                    <p className="text-sm font-medium text-red-500">{item.filename}</p>
+                  ) : (
+                    <input
+                      value={item.title}
+                      onChange={(e) => setBulkItems((prev) => prev.map((it, i) => i === idx ? { ...it, title: e.target.value } : it))}
+                      className="w-full text-sm font-medium border-0 border-b border-transparent hover:border-gray-300 focus:border-indigo-400 focus:outline-none bg-transparent pb-0.5"
+                    />
+                  )}
+                  <div className="flex items-center gap-2 mt-0.5">
+                    {item.error ? (
+                      <p className="text-xs text-red-400">{item.error}</p>
+                    ) : (
+                      <>
+                        <span className="text-xs text-gray-400">{item.questions.length} Fragen</span>
+                        <button
+                          onClick={() => setBulkItems((prev) => prev.map((it, i) => i === idx ? { ...it, expanded: !it.expanded } : it))}
+                          className="text-xs text-indigo-500 hover:underline"
+                        >
+                          {item.expanded ? "▲ einklappen" : "▼ anzeigen"}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  {item.expanded && (
+                    <ol className="mt-2 space-y-1 pl-1">
+                      {item.questions.map((q, qi) => (
+                        <li key={qi} className="text-xs text-gray-500 leading-snug">
+                          <span className="text-gray-300 mr-1">{qi + 1}.</span>{q.text}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="px-4 pb-4 pt-2 border-t">
+          <button
+            onClick={saveBulk}
+            disabled={selectedCount === 0 || bulkSaving}
+            className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+          >
+            {bulkSaving ? "Importieren..." : `${selectedCount} Quizzl${selectedCount !== 1 ? "s" : ""} importieren`}
+          </button>
         </div>
       </Layout>
     );
