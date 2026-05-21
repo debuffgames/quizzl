@@ -74,42 +74,94 @@ interface ParsedQuestion {
 
 function parseKahootXlsx(buffer: ArrayBuffer): ParsedQuestion[] {
   const wb = XLSX.read(buffer, { type: "array" });
-  const ws = wb.Sheets[wb.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" }) as string[][];
 
-  // Find header row: first row where a cell contains "Question"
+  // Results export: has "RawReportData Data" sheet — no header row, fixed column layout:
+  // [0] question-key, [1] question text, [2-7] answer options, [8] correct answer texts (CSV), [9] time limit
+  const rawSheet = wb.SheetNames.find((n) => n.toLowerCase().includes("rawreport"));
+  if (rawSheet) return parseFromRawReport(wb.Sheets[rawSheet]);
+
+  // Quiz definition export: first sheet has a header row containing "Question"
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return parseFromDefinition(ws);
+}
+
+function parseFromRawReport(ws: XLSX.WorkSheet): ParsedQuestion[] {
+  const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "" }) as string[][];
+  const seen = new Set<string>();
+  const questions: ParsedQuestion[] = [];
+
+  for (const row of rows) {
+    const key = String(row[0] ?? "").trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+
+    const text = String(row[1] ?? "").trim();
+    if (!text) continue;
+
+    // Answer option texts in columns 2–7
+    const answerTexts = [row[2], row[3], row[4], row[5], row[6], row[7]]
+      .map((c) => String(c ?? "").trim())
+      .filter((t) => t !== "");
+    if (answerTexts.length < 2) continue;
+
+    // Correct answers: comma-separated answer texts in column 8
+    const correctSet = new Set(
+      String(row[8] ?? "").split(",").map((s) => s.trim()).filter(Boolean)
+    );
+
+    const timeLimitSecs = parseInt(String(row[9] ?? ""), 10) || 20;
+
+    const answers = answerTexts.map((t, i) => ({
+      text: t, isCorrect: correctSet.has(t), sortOrder: i,
+    }));
+
+    const isYesNo = answerTexts.length === 2 &&
+      /^(ja|nein|yes|no|wahr|falsch|true|false)$/i.test(answerTexts[0]) &&
+      /^(ja|nein|yes|no|wahr|falsch|true|false)$/i.test(answerTexts[1]);
+
+    const correctCount = answers.filter((a) => a.isCorrect).length;
+    const answerType: ParsedQuestion["answerType"] = isYesNo
+      ? "YES_NO" : correctCount > 1 ? "MULTIPLE_CHOICE" : "SINGLE_CHOICE";
+
+    questions.push({ text, answerType, timeLimitSecs, points: 100, answers });
+  }
+  return questions;
+}
+
+function parseFromDefinition(ws: XLSX.WorkSheet): ParsedQuestion[] {
+  // Quiz definition export has a header row with "Question", "Answer 1–4",
+  // "Time limit (sec)", "Correct answer(s)" (numeric index 1–4 or CSV)
+  const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, defval: "" }) as string[][];
+
   let headerIdx = -1;
   for (let i = 0; i < Math.min(rows.length, 10); i++) {
     if (rows[i].some((c) => String(c).toLowerCase().includes("question"))) {
-      headerIdx = i;
-      break;
+      headerIdx = i; break;
     }
   }
-  if (headerIdx === -1) throw new Error("Keine Kopfzeile mit 'Question' gefunden");
+  if (headerIdx === -1) throw new Error("Kein unterstütztes Kahoot-Format erkannt (weder Ergebnis-Report noch Quiz-Definition)");
 
   const headers = rows[headerIdx].map((c) => String(c).toLowerCase());
-  const col = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+  const col = (kws: string[]) => headers.findIndex((h) => kws.some((k) => h.includes(k)));
 
-  const qCol  = col(["question"]);
-  const a1Col = col(["answer 1"]);
-  const a2Col = col(["answer 2"]);
-  const a3Col = col(["answer 3"]);
-  const a4Col = col(["answer 4"]);
-  const timeCol    = col(["time limit", "time"]);
+  const qCol      = col(["question"]);
+  const a1Col     = col(["answer 1"]);
+  const a2Col     = col(["answer 2"]);
+  const a3Col     = col(["answer 3"]);
+  const a4Col     = col(["answer 4"]);
+  const timeCol   = col(["time limit", "time"]);
   const correctCol = col(["correct answer"]);
-  const typeCol    = col(["question type", "type"]);
+  const typeCol   = col(["question type", "type"]);
 
   if (qCol === -1 || a1Col === -1 || correctCol === -1)
     throw new Error("Pflicht-Spalten (Question, Answer 1, Correct answer) nicht gefunden");
 
   const questions: ParsedQuestion[] = [];
-
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i];
     const text = String(row[qCol] ?? "").trim();
     if (!text) continue;
 
-    // Skip non-quiz question types (polls, slides, etc.)
     const qType = typeCol !== -1 ? String(row[typeCol] ?? "").toLowerCase() : "quiz";
     if (qType && !["quiz", "true or false", ""].includes(qType)) continue;
 
@@ -120,29 +172,20 @@ function parseKahootXlsx(buffer: ArrayBuffer): ParsedQuestion[] {
       .filter((c) => c !== -1)
       .map((c, idx) => ({ text: String(row[c] ?? "").trim(), idx: idx + 1 }))
       .filter((a) => a.text !== "");
-
     if (rawAnswers.length < 2) continue;
 
     const isYesNo = qType === "true or false" ||
-      (rawAnswers.length === 2 && /^(yes|no|ja|nein|wahr|falsch|true|false)$/i.test(rawAnswers[0].text) && /^(yes|no|ja|nein|wahr|falsch|true|false)$/i.test(rawAnswers[1].text));
+      (rawAnswers.length === 2 && /^(yes|no|ja|nein|wahr|falsch|true|false)$/i.test(rawAnswers[0].text));
 
     const answerType: ParsedQuestion["answerType"] = isYesNo
-      ? "YES_NO"
-      : correctNums.length > 1
-        ? "MULTIPLE_CHOICE"
-        : "SINGLE_CHOICE";
+      ? "YES_NO" : correctNums.length > 1 ? "MULTIPLE_CHOICE" : "SINGLE_CHOICE";
 
-    const answers = rawAnswers.map((a, sortOrder) => ({
-      text: a.text,
-      isCorrect: correctNums.includes(a.idx),
-      sortOrder,
-    }));
-
-    const timeLimitSecs = timeCol !== -1 ? (parseInt(String(row[timeCol] ?? ""), 10) || 20) : 20;
-
-    questions.push({ text, answerType, timeLimitSecs, points: 100, answers });
+    questions.push({
+      text, answerType, points: 100,
+      timeLimitSecs: timeCol !== -1 ? (parseInt(String(row[timeCol] ?? ""), 10) || 20) : 20,
+      answers: rawAnswers.map((a, sortOrder) => ({ text: a.text, isCorrect: correctNums.includes(a.idx), sortOrder })),
+    });
   }
-
   return questions;
 }
 
