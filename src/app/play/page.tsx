@@ -257,8 +257,9 @@ function PlayContent() {
 
   if (phase === "waiting") return (
     <Shell>
-      <Spinner />
-      <p className="mt-4 text-gray-500 text-sm">Warte auf nächste Frage...</p>
+      <img src="/logo.png" alt="Quizzl" className="w-32 mb-6 select-none" draggable={false} />
+      <p className="text-gray-800 font-bold text-lg">Gleich geht's los!</p>
+      <p className="text-gray-400 text-sm mt-1">Warte auf den Start...</p>
     </Shell>
   );
 
