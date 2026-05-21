@@ -226,99 +226,100 @@ function PlayContent() {
   // ─── Screens ─────────────────────────────────────────────────────────────────
 
   if (phase === "loading") return (
-    <FullScreen bg="bg-[#02512c]">
+    <Shell>
       <Spinner />
-      <p className="mt-4 text-green-200 font-medium">Verbinde...</p>
-    </FullScreen>
+      <p className="mt-4 text-gray-400 text-sm">Verbinde...</p>
+    </Shell>
   );
 
   if (phase === "error") return (
-    <FullScreen bg="bg-[#02512c]">
-      <div className="bg-white/10 rounded-2xl px-6 py-5 text-center">
-        <p className="text-4xl mb-3">⚠️</p>
-        <p className="text-white font-bold text-lg">{error}</p>
-      </div>
-    </FullScreen>
+    <Shell>
+      <p className="text-4xl mb-3">⚠️</p>
+      <p className="text-gray-700 font-semibold">{error}</p>
+    </Shell>
   );
 
   if (phase === "paused") return (
-    <FullScreen bg="bg-gray-800">
-      <div className="text-6xl mb-4">⏸</div>
-      <p className="text-white text-2xl font-bold">Pause</p>
-    </FullScreen>
+    <Shell>
+      <div className="text-5xl mb-3">⏸</div>
+      <p className="text-gray-600 text-xl font-bold">Pause</p>
+    </Shell>
   );
 
   if (phase === "waiting") return (
-    <FullScreen bg="bg-[#02512c]">
+    <Shell>
       <Spinner />
-      <p className="mt-5 text-white text-xl font-bold">Warte auf nächste Frage...</p>
-    </FullScreen>
+      <p className="mt-4 text-gray-500 text-sm">Warte auf nächste Frage...</p>
+    </Shell>
   );
 
   if (phase === "ended") return (
-    <FullScreen bg="bg-[#02512c]">
-      <p className="text-white/70 text-sm font-medium uppercase tracking-widest mb-2">Quiz beendet</p>
-      <p className="text-white text-6xl font-black mb-1">{finalScore}</p>
-      <p className="text-green-200 text-lg font-semibold mb-8">Punkte</p>
+    <Shell>
+      <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-1">Quiz beendet</p>
+      <p className="text-gray-900 text-5xl font-black mb-0.5">{finalScore}</p>
+      <p className="text-gray-500 text-base mb-6">Punkte</p>
       {topScores.length > 0 && (
-        <div className="w-full max-w-xs bg-white/10 rounded-2xl overflow-hidden">
+        <div className="w-full max-w-xs rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
           {topScores.slice(0, 5).map((s, i) => (
-            <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 ${i < topScores.length - 1 ? "border-b border-white/10" : ""}`}>
-              <span className={`text-lg font-black w-7 text-center ${s.rank === 1 ? "text-yellow-300" : "text-white/50"}`}>{s.rank}</span>
-              <span className="flex-1 text-white font-semibold truncate">{s.displayName}</span>
-              <span className="text-white font-bold">{s.score}</span>
+            <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 bg-white ${i < topScores.length - 1 ? "border-b border-gray-100" : ""}`}>
+              <span className={`text-base font-black w-6 text-center ${s.rank === 1 ? "text-yellow-500" : "text-gray-300"}`}>{s.rank}</span>
+              <span className="flex-1 text-gray-800 font-medium text-sm truncate">{s.displayName}</span>
+              <span className="text-gray-700 font-bold text-sm">{s.score}</span>
             </div>
           ))}
         </div>
       )}
-    </FullScreen>
+    </Shell>
   );
 
   if (phase === "scoreboard" && topScores.length > 0) return (
-    <FullScreen bg="bg-[#02512c]">
-      <p className="text-white/70 text-xs font-semibold uppercase tracking-widest mb-4">Zwischenstand</p>
-      <div className="w-full max-w-xs bg-white/10 rounded-2xl overflow-hidden">
+    <Shell>
+      <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-4">Zwischenstand</p>
+      <div className="w-full max-w-xs rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
         {topScores.map((s, i) => (
-          <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 ${i < topScores.length - 1 ? "border-b border-white/10" : ""} ${s.rank === 1 ? "bg-yellow-400/20" : ""}`}>
-            <span className={`text-lg font-black w-7 text-center ${s.rank === 1 ? "text-yellow-300" : "text-white/50"}`}>{s.rank}</span>
-            <span className="flex-1 text-white font-semibold truncate">{s.displayName}</span>
-            <span className="text-white font-bold">{s.score}</span>
+          <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 bg-white ${i < topScores.length - 1 ? "border-b border-gray-100" : ""} ${s.rank === 1 ? "bg-yellow-50" : ""}`}>
+            <span className={`text-base font-black w-6 text-center ${s.rank === 1 ? "text-yellow-500" : "text-gray-300"}`}>{s.rank}</span>
+            <span className="flex-1 text-gray-800 font-medium text-sm truncate">{s.displayName}</span>
+            <span className="text-gray-700 font-bold text-sm">{s.score}</span>
           </div>
         ))}
       </div>
-    </FullScreen>
+    </Shell>
   );
 
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
     return (
-      <FullScreen bg={correct ? "bg-emerald-600" : "bg-rose-600"}>
-        <div className="text-7xl mb-3">{correct ? "✓" : "✗"}</div>
-        <p className="text-white text-3xl font-black mb-1">{correct ? "Richtig!" : "Falsch!"}</p>
-        {correct && (
-          <p className="text-white/90 text-2xl font-bold mb-1">+{reveal.scoreGained} Punkte</p>
-        )}
-        <p className="text-white/70 text-sm mb-8">Gesamt: {reveal.totalScore} Punkte</p>
+      <Shell>
+        {/* Result badge */}
+        <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mb-3 ${correct ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
+          {correct ? "✓" : "✗"}
+        </div>
+        <p className={`text-xl font-black mb-0.5 ${correct ? "text-emerald-600" : "text-red-500"}`}>
+          {correct ? "Richtig!" : "Falsch!"}
+        </p>
+        {correct && <p className="text-gray-700 font-bold text-lg mb-0.5">+{reveal.scoreGained} Punkte</p>}
+        <p className="text-gray-400 text-sm mb-5">Gesamt: {reveal.totalScore} Punkte</p>
 
         {question && (
-          <div className="w-full max-w-sm space-y-2 mb-6">
+          <div className="w-full space-y-2 mb-5">
             {question.answers.map((a) => {
               const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
               const isCorrect = reveal.correctAnswerIds.includes(a.id);
               const wasSelected = selectedIds.includes(a.id);
               return (
-                <div key={a.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 ${
+                <div key={a.id} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl border ${
                   isCorrect
-                    ? "bg-white border-white text-gray-900"
+                    ? "border-emerald-300 bg-emerald-50"
                     : wasSelected
-                    ? "bg-white/20 border-white/40 text-white"
-                    : "bg-white/10 border-white/20 text-white/70"
+                    ? "border-red-200 bg-red-50"
+                    : "border-gray-100 bg-gray-50"
                 }`}>
-                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${color.bg} ${color.text}`}>
+                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${color.bg} ${color.text}`}>
                     {color.shape}
                   </span>
-                  {a.text && <span className="flex-1 text-sm font-medium leading-tight">{a.text}</span>}
-                  {isCorrect && <span className="text-green-600 font-bold text-lg">✓</span>}
+                  {a.text && <span className={`flex-1 text-sm font-medium leading-tight ${isCorrect ? "text-emerald-800" : wasSelected ? "text-red-700" : "text-gray-500"}`}>{a.text}</span>}
+                  {isCorrect && <span className="text-emerald-500 font-bold text-sm">✓</span>}
                 </div>
               );
             })}
@@ -328,15 +329,15 @@ function PlayContent() {
         <button
           onClick={goNext}
           disabled={readyForNext}
-          className="w-full max-w-sm py-4 bg-white text-gray-900 font-black text-lg rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-70 flex items-center justify-center gap-3"
+          className="w-full py-3.5 bg-[#02512c] text-white font-bold text-base rounded-xl active:scale-95 transition-transform disabled:opacity-60 flex items-center justify-center gap-2"
         >
           {readyForNext ? <><Spinner small />Gleich...</> : "Nächste Frage →"}
         </button>
-      </FullScreen>
+      </Shell>
     );
   }
 
-  if (!question) return <FullScreen bg="bg-[#02512c]"><Spinner /></FullScreen>;
+  if (!question) return <Shell><Spinner /></Shell>;
 
   const isBeamer = gameMode === "BEAMER";
   const isMultiple = question.answerType === "MULTIPLE_CHOICE";
@@ -346,73 +347,42 @@ function PlayContent() {
   // ─── Question screen ──────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col min-h-screen bg-[#02512c]">
-      {/* Header */}
-      <div className="flex items-center justify-between px-5 py-3 shrink-0">
-        <span className="text-green-200 text-sm font-semibold">
-          Frage {question.index + 1}<span className="text-green-400">/{question.total}</span>
-        </span>
-        {timeLeft !== null && (
-          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-black text-lg tabular-nums
-            ${timeLeft <= 5 ? "bg-red-500 text-white animate-pulse" : "bg-white/20 text-white"}`}>
-            {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
-          </div>
-        )}
-      </div>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center">
+      <div className="w-full max-w-md flex flex-col min-h-screen">
 
-      {/* Question text */}
-      <div className="px-5 pb-5 shrink-0">
-        {isBeamer ? (
-          <p className="text-green-300 text-base text-center font-medium">Schau auf den Beamer</p>
-        ) : (
-          question.text && (
-            <p className="text-white text-xl font-bold leading-snug text-center">{question.text}</p>
-          )
-        )}
-      </div>
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 shrink-0">
+          <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+            Frage {question.index + 1}/{question.total}
+          </span>
+          {timeLeft !== null && (
+            <div className={`px-3 py-1 rounded-full font-black text-sm tabular-nums
+              ${timeLeft <= 5 ? "bg-red-100 text-red-600 animate-pulse" : "bg-white border border-gray-200 text-gray-700"}`}>
+              {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
+            </div>
+          )}
+        </div>
 
-      {/* Answer area */}
-      <div className="flex-1 flex flex-col px-4 gap-3">
-        {answered ? (
-          <div className="flex-1 flex flex-col items-center justify-center gap-3">
-            <Spinner />
-            <p className="text-green-200 text-lg font-semibold">Antwort eingegangen...</p>
-          </div>
-        ) : isBeamer ? (
-          // BEAMER: 2x2 colored buttons, no text
-          <div className="grid grid-cols-2 gap-3 flex-1 content-start">
-            {question.answers.map((a) => {
-              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
-              const isSelected = selectedIds.includes(a.id);
-              return (
-                <button
-                  key={a.id}
-                  onClick={() => toggleAnswer(a.id)}
-                  disabled={submitted}
-                  className={`flex flex-col items-center justify-center gap-2 p-5 rounded-2xl font-bold transition-all active:scale-95
-                    ${color.bg} ${color.text}
-                    ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-[#02512c] scale-95" : ""}
-                    ${submitted ? "opacity-50" : "cursor-pointer shadow-md"}
-                  `}
-                >
-                  <span className="text-3xl">{color.shape}</span>
-                </button>
-              );
-            })}
-            {/* BEAMER MULTIPLE_CHOICE submit */}
-            {isMultiple && hasSelection && (
-              <button
-                onClick={submitAnswer}
-                className="col-span-2 py-4 bg-white text-gray-900 font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform"
-              >
-                Antworten abgeben ({selectedIds.length})
-              </button>
-            )}
-          </div>
-        ) : (
-          // AUTONOMOUS: colorful buttons with text + submit directly below
-          <>
-            <div className="grid grid-cols-2 gap-3">
+        {/* Question text */}
+        <div className="px-4 pb-4 shrink-0">
+          {isBeamer ? (
+            <p className="text-gray-400 text-sm text-center">Schau auf den Beamer</p>
+          ) : (
+            question.text && (
+              <p className="text-gray-900 text-lg font-bold leading-snug text-center">{question.text}</p>
+            )
+          )}
+        </div>
+
+        {/* Answer area */}
+        <div className="flex-1 flex flex-col px-4 gap-3 pb-4">
+          {answered ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3">
+              <Spinner />
+              <p className="text-gray-500 text-sm">Antwort eingegangen...</p>
+            </div>
+          ) : isBeamer ? (
+            <div className="grid grid-cols-2 gap-3 flex-1 content-start">
               {question.answers.map((a) => {
                 const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
                 const isSelected = selectedIds.includes(a.id);
@@ -421,41 +391,72 @@ function PlayContent() {
                     key={a.id}
                     onClick={() => toggleAnswer(a.id)}
                     disabled={submitted}
-                    className={`flex flex-col items-start gap-1.5 p-4 rounded-2xl font-semibold transition-all active:scale-95 text-left
+                    className={`flex flex-col items-center justify-center gap-2 p-5 rounded-2xl font-bold transition-all active:scale-95
                       ${color.bg} ${color.text}
-                      ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-[#02512c] scale-95" : "shadow-md"}
+                      ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
                       ${submitted ? "opacity-50" : "cursor-pointer"}
                     `}
                   >
-                    <span className="text-xl">{color.shape}</span>
-                    {a.text && <span className="text-sm leading-tight">{a.text}</span>}
+                    <span className="text-3xl">{color.shape}</span>
                   </button>
                 );
               })}
+              {isMultiple && hasSelection && (
+                <button
+                  onClick={submitAnswer}
+                  className="col-span-2 py-3.5 bg-[#02512c] text-white font-bold text-sm rounded-xl active:scale-95 transition-transform"
+                >
+                  Antworten abgeben ({selectedIds.length})
+                </button>
+              )}
             </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                {question.answers.map((a) => {
+                  const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+                  const isSelected = selectedIds.includes(a.id);
+                  return (
+                    <button
+                      key={a.id}
+                      onClick={() => toggleAnswer(a.id)}
+                      disabled={submitted}
+                      className={`flex flex-col items-start gap-1.5 p-4 rounded-2xl font-semibold transition-all active:scale-95 text-left
+                        ${color.bg} ${color.text}
+                        ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
+                        ${submitted ? "opacity-50" : "cursor-pointer"}
+                      `}
+                    >
+                      <span className="text-xl">{color.shape}</span>
+                      {a.text && <span className="text-sm leading-tight">{a.text}</span>}
+                    </button>
+                  );
+                })}
+              </div>
 
-            {/* Submit button directly below answers */}
-            {hasSelection && !submitted && (
-              <button
-                onClick={submitAnswer}
-                className="w-full py-4 bg-white text-[#02512c] font-black text-lg rounded-2xl shadow-lg active:scale-95 transition-transform mt-1"
-              >
-                {isMultiple ? `Antworten abgeben (${selectedIds.length})` : "Antwort einloggen"}
-              </button>
-            )}
-          </>
-        )}
+              {hasSelection && !submitted && (
+                <button
+                  onClick={submitAnswer}
+                  className="w-full py-3.5 bg-[#02512c] text-white font-bold text-base rounded-xl active:scale-95 transition-transform"
+                >
+                  {isMultiple ? `Antworten abgeben (${selectedIds.length})` : "Antwort einloggen"}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
       </div>
-
-      <div className="h-4 shrink-0" />
     </div>
   );
 }
 
-function FullScreen({ children, bg }: { children: React.ReactNode; bg?: string }) {
+function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className={`flex flex-col items-center justify-center min-h-screen text-center px-6 ${bg ?? "bg-[#02512c]"}`}>
-      {children}
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4">
+      <div className="w-full max-w-md text-center flex flex-col items-center">
+        {children}
+      </div>
     </div>
   );
 }
@@ -463,8 +464,8 @@ function FullScreen({ children, bg }: { children: React.ReactNode; bg?: string }
 function Spinner({ small }: { small?: boolean }) {
   return (
     <div className={small
-      ? "w-5 h-5 border-2 border-gray-400 border-t-gray-700 rounded-full animate-spin"
-      : "w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin"
+      ? "w-4 h-4 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin"
+      : "w-8 h-8 border-3 border-gray-200 border-t-gray-500 rounded-full animate-spin"
     } />
   );
 }
