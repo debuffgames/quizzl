@@ -225,6 +225,13 @@ function PlayContent() {
     socketRef.current?.emit(QUIZ_EVENTS.READY_FOR_NEXT);
   }, [applyQuestion]);
 
+  // ─── Derived state (must come before all early returns to avoid TDZ) ─────────
+
+  const isBeamer = gameMode === "BEAMER";
+  const isMultiple = question?.answerType === "MULTIPLE_CHOICE";
+  const hasSelection = selectedIds.length > 0;
+  const answered = phase === "answered";
+
   // ─── Screens ─────────────────────────────────────────────────────────────────
 
   if (phase === "loading") return (
@@ -346,11 +353,6 @@ function PlayContent() {
       </GameCard>
     );
   }
-
-  const isBeamer = gameMode === "BEAMER";
-  const isMultiple = question?.answerType === "MULTIPLE_CHOICE";
-  const hasSelection = selectedIds.length > 0;
-  const answered = phase === "answered";
 
   if (!question) return <Shell><Spinner /></Shell>;
 
