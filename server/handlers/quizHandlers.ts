@@ -211,7 +211,7 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
       } else {
         await advanceToNextQuestion(io, current, sessionManager);
       }
-    }, 8000); // 8 seconds so students can see the result and click "Nächste Frage"
+    }, 5000); // 5 seconds for students to see the result before auto-advancing
   }
 }
 

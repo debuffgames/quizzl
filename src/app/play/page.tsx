@@ -62,6 +62,7 @@ function PlayContent() {
   const [finalScore, setFinalScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [prevPhase, setPrevPhase] = useState<Phase>("waiting");
+  const [readyForNext, setReadyForNext] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -69,6 +70,7 @@ function PlayContent() {
   const phaseRef = useRef<Phase>("loading");
   // Buffer next question while on reveal screen so student controls the pace
   const pendingQuestionRef = useRef<QuestionData | null>(null);
+  const readyForNextRef = useRef(false);
   const finalScoreRef = useRef(0);
 
   useEffect(() => { phaseRef.current = phase; }, [phase]);
@@ -129,8 +131,14 @@ function PlayContent() {
       socket.on("connect_error", () => { setError("Verbindung zum Server fehlgeschlagen"); setPhase("error"); });
 
       socket.on(QUIZ_EVENTS.QUESTION, (data: QuestionData) => {
-        pendingQuestionRef.current = null;
-        // Buffer if student is viewing their reveal — they control when to advance
+        // If student already clicked "Nächste Frage", apply immediately
+        if (readyForNextRef.current) {
+          readyForNextRef.current = false;
+          setReadyForNext(false);
+          applyQuestion(data);
+          return;
+        }
+        // Buffer while student is still reading the reveal screen
         if (phaseRef.current === "revealed") {
           pendingQuestionRef.current = data;
           return;
@@ -209,7 +217,9 @@ function PlayContent() {
     if (pending) {
       applyQuestion(pending);
     } else {
-      setPhase("waiting");
+      // Question not yet arrived — stay on reveal, show loading, apply when it comes
+      readyForNextRef.current = true;
+      setReadyForNext(true);
     }
   }, [applyQuestion]);
 
@@ -317,9 +327,10 @@ function PlayContent() {
 
         <button
           onClick={goNext}
-          className="w-full max-w-sm py-4 bg-white text-gray-900 font-black text-lg rounded-2xl shadow-lg active:scale-95 transition-transform"
+          disabled={readyForNext}
+          className="w-full max-w-sm py-4 bg-white text-gray-900 font-black text-lg rounded-2xl shadow-lg active:scale-95 transition-transform disabled:opacity-70 flex items-center justify-center gap-3"
         >
-          Nächste Frage →
+          {readyForNext ? <><Spinner small />Gleich...</> : "Nächste Frage →"}
         </button>
       </FullScreen>
     );
@@ -449,8 +460,11 @@ function FullScreen({ children, bg }: { children: React.ReactNode; bg?: string }
   );
 }
 
-function Spinner() {
+function Spinner({ small }: { small?: boolean }) {
   return (
-    <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
+    <div className={small
+      ? "w-5 h-5 border-2 border-gray-400 border-t-gray-700 rounded-full animate-spin"
+      : "w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin"
+    } />
   );
 }
