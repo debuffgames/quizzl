@@ -9,6 +9,7 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     if (!sessionId) return;
     const session = sessionManager.getById(sessionId);
     if (!session) return;
+    if (session.gameMode === "AUTONOMOUS") return; // students manage their own pace
     await advanceToNextQuestion(io, session, sessionManager);
   });
 
@@ -17,6 +18,7 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     if (!sessionId) return;
     const session = sessionManager.getById(sessionId);
     if (!session) return;
+    if (session.gameMode === "AUTONOMOUS") return;
     if (session.questionTimerHandle) {
       clearTimeout(session.questionTimerHandle);
       session.questionTimerHandle = null;
@@ -24,33 +26,19 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     await revealAnswer(io, session, sessionManager);
   });
 
-  // AUTONOMOUS: student signals readiness → send next question immediately to just them
-  socket.on(QUIZ_EVENTS.READY_FOR_NEXT, async () => {
+  // AUTONOMOUS: student finished all questions, report final score
+  socket.on(QUIZ_EVENTS.AUTONOMOUS_COMPLETE, ({ totalScore }: { totalScore: number }) => {
     const entry = sessionManager.getParticipantBySocket(socket.id);
     if (!entry || entry.session.gameMode !== "AUTONOMOUS") return;
-    const { session } = entry;
+    const { session, participant } = entry;
+    participant.score = totalScore;
 
-    const questions = await prisma.question.findMany({
-      where: { quizId: session.quizId },
-      orderBy: { sortOrder: "asc" },
-      include: { answers: { orderBy: { sortOrder: "asc" } } },
-    });
-
-    const nextIndex = session.currentQuestionIndex + 1;
-    if (nextIndex >= questions.length) return; // last question — END event will come from the timer
-
-    const question = questions[nextIndex];
-    socket.emit(QUIZ_EVENTS.QUESTION, {
-      id: question.id,
-      text: question.text,
-      answerType: question.answerType,
-      answers: question.answers.map((a) => ({ id: a.id, text: a.text, sortOrder: a.sortOrder })),
-      timeLimitSecs: question.timeLimitSecs,
-      explanation: question.explanation ?? null,
-      remainingSecs: session.questionTimerEnd ? Math.max(0, Math.ceil((session.questionTimerEnd - Date.now()) / 1000)) : null,
-      index: nextIndex,
-      total: questions.length,
-    });
+    const topScores = sessionManager.getTopScores(session, 10);
+    if (session.teacherSocketId) {
+      io.to(session.teacherSocketId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
+    }
+    // Send updated scoreboard to all students so end-screen shows live leaderboard
+    io.to(session.sessionId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
   });
 
   socket.on(QUIZ_EVENTS.END_SESSION, async () => {
@@ -91,7 +79,6 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
   const nextIndex = session.currentQuestionIndex + 1;
   if (nextIndex >= quiz.questions.length) return;
 
-  // Reset per-participant answer state
   for (const p of session.participants.values()) {
     p.answeredCurrentQuestion = false;
     p.currentAnswerIds = [];
@@ -100,7 +87,6 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
 
   const question = quiz.questions[nextIndex];
   session.currentQuestionIndex = nextIndex;
-
   session.questionTimerEnd = question.timeLimitSecs
     ? Date.now() + question.timeLimitSecs * 1000
     : null;
@@ -121,15 +107,11 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
     total: quiz.questions.length,
   };
 
-  // Students: text only for AUTONOMOUS; buzzer-only (no text) for BEAMER
+  // BEAMER: buzzer-only payload (no text) to students
   const studentPayload = {
     ...fullPayload,
-    text: session.gameMode === "AUTONOMOUS" ? question.text : undefined,
-    answers: question.answers.map((a) => ({
-      id: a.id,
-      text: session.gameMode === "AUTONOMOUS" ? a.text : undefined,
-      sortOrder: a.sortOrder,
-    })),
+    text: undefined,
+    answers: question.answers.map((a) => ({ id: a.id, text: undefined, sortOrder: a.sortOrder })),
   };
   io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.QUESTION, studentPayload);
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.QUESTION, fullPayload);
@@ -139,7 +121,7 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
     io.to(session.teacherSocketId).emit(QUIZ_EVENTS.RESPONSE_COUNT, { answered: 0, total: session.participants.size });
   }
 
-  // Auto-advance timer (AUTONOMOUS mode or BEAMER with timer)
+  // Auto-advance timer for BEAMER mode
   if (session.questionTimerEnd) {
     const delay = question.timeLimitSecs! * 1000;
     session.questionTimerHandle = setTimeout(async () => {
@@ -164,18 +146,12 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
 
   const correctIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
 
-  // Award points and send reveal to participants who haven't received it yet
+  // Send reveal to all BEAMER participants
   for (const p of session.participants.values()) {
-    if (p.revealSent) continue; // AUTONOMOUS: already sent individually on submit
     if (!p.answeredCurrentQuestion) {
-      // Didn't answer — send reveal with 0 points
       const clientSocket = io.sockets.sockets.get(p.socketId);
       if (clientSocket) {
-        clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, {
-          correctAnswerIds: correctIds,
-          scoreGained: 0,
-          totalScore: p.score,
-        });
+        clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, scoreGained: 0, totalScore: p.score });
       }
       continue;
     }
@@ -195,16 +171,14 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
 
     const clientSocket = io.sockets.sockets.get(p.socketId);
     if (clientSocket) {
-      const gained = correct ? Math.round(q.points) : 0;
       clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, {
         correctAnswerIds: correctIds,
-        scoreGained: gained,
+        scoreGained: correct ? Math.round(q.points) : 0,
         totalScore: p.score,
       });
     }
   }
 
-  // Answer distribution for teacher + beamer
   const dist = q.answers.map((a) => ({
     answerId: a.id,
     count: Array.from(session.participants.values()).filter((p) => p.currentAnswerIds.includes(a.id)).length,
@@ -216,33 +190,8 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   }
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds });
 
-  // Scoreboard
   const topScores = sessionManager.getTopScores(session, 10);
   io.to(session.sessionId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
-
-  // AUTONOMOUS mode: auto-advance to next question or end session
-  if (session.gameMode === "AUTONOMOUS") {
-    const totalQuestions = await prisma.question.count({ where: { quizId: session.quizId } });
-    const isLastQuestion = session.currentQuestionIndex >= totalQuestions - 1;
-
-    session.questionTimerHandle = setTimeout(async () => {
-      const current = sessionManager.getById(session.sessionId);
-      if (!current) return;
-      current.questionTimerHandle = null;
-
-      if (isLastQuestion) {
-        const finalTopScores = sessionManager.getTopScores(current, 10);
-        io.to(current.sessionId).emit(QUIZ_EVENTS.END, { topScores: finalTopScores });
-        await prisma.quizSession.update({
-          where: { id: current.sessionId },
-          data: { status: "ENDED", endedAt: new Date() },
-        });
-        sessionManager.endSession(current.sessionId);
-      } else {
-        await advanceToNextQuestion(io, current, sessionManager);
-      }
-    }, 5000); // 5 seconds for students to see the result before auto-advancing
-  }
 }
 
 function getTeacherSession(socket: Socket, sessionManager: SessionManager): string | null {
