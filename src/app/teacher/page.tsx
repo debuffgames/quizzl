@@ -721,10 +721,22 @@ function TeacherContent() {
                     )}
                   </div>
                   {item.expanded && (
-                    <ol className="mt-2 space-y-1 pl-1">
+                    <ol className="mt-2 space-y-2 pl-1">
                       {item.questions.map((q, qi) => (
-                        <li key={qi} className="text-xs text-gray-500 leading-snug">
-                          <span className="text-gray-300 mr-1">{qi + 1}.</span>{q.text}
+                        <li key={qi}>
+                          <p className="text-xs text-gray-600 leading-snug font-medium">
+                            <span className="text-gray-300 mr-1">{qi + 1}.</span>{q.text}
+                          </p>
+                          <ul className="mt-1 space-y-0.5 pl-4">
+                            {q.answers.map((a, ai) => (
+                              <li key={ai} className="flex items-baseline gap-1.5 text-xs text-gray-400">
+                                <span className={`shrink-0 font-bold ${a.isCorrect ? "text-emerald-500" : "text-gray-300"}`}>
+                                  {a.isCorrect ? "✓" : "–"}
+                                </span>
+                                {a.text}
+                              </li>
+                            ))}
+                          </ul>
                         </li>
                       ))}
                     </ol>
