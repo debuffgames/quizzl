@@ -160,6 +160,8 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
 
   // Refs for timer callbacks (avoid stale closures)
   const scoreRef = useRef(0);
+  const correctRef = useRef(0);
+  const wrongRef = useRef(0);
   const qIndexRef = useRef(0);
   const selectedIdsRef = useRef<string[]>([]);
   const phaseRef = useRef<"question" | "revealed" | "ended">("question");
@@ -234,6 +236,9 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
     let gained = 0;
     if (correct && !timedOut) {
       gained = q.points;
+      correctRef.current += 1;
+    } else {
+      wrongRef.current += 1;
     }
 
     scoreRef.current += gained;
@@ -246,6 +251,13 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
       type: "PROGRESS",
       progress: questions.length > 0 ? (idx + 1) / questions.length : 0,
       score: scoreRef.current,
+      displayText: `Frage ${idx + 1}/${questions.length} · ${scoreRef.current} Pkt.`,
+      details: {
+        "Frage": `${idx + 1} / ${questions.length}`,
+        "Richtig": correctRef.current,
+        "Falsch": wrongRef.current,
+        "Punkte": scoreRef.current,
+      },
     }, "*");
   }, [questions]);
 
