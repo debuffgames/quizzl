@@ -66,6 +66,7 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
   for (const p of session.participants.values()) {
     p.answeredCurrentQuestion = false;
     p.currentAnswerIds = [];
+    p.revealSent = false;
   }
 
   const question = quiz.questions[nextIndex];
@@ -133,9 +134,22 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
 
   const correctIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
 
-  // Award points to participants who answered correctly
+  // Award points and send reveal to participants who haven't received it yet
   for (const p of session.participants.values()) {
-    if (!p.answeredCurrentQuestion) continue;
+    if (p.revealSent) continue; // AUTONOMOUS: already sent individually on submit
+    if (!p.answeredCurrentQuestion) {
+      // Didn't answer — send reveal with 0 points
+      const clientSocket = io.sockets.sockets.get(p.socketId);
+      if (clientSocket) {
+        clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, {
+          correctAnswerIds: correctIds,
+          scoreGained: 0,
+          totalScore: p.score,
+        });
+      }
+      continue;
+    }
+
     const correct =
       q.answerType === "MULTIPLE_CHOICE"
         ? correctIds.every((id) => p.currentAnswerIds.includes(id)) &&
@@ -197,7 +211,7 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
       } else {
         await advanceToNextQuestion(io, current, sessionManager);
       }
-    }, 4000); // 4 seconds for students to see the result before advancing
+    }, 8000); // 8 seconds so students can see the result and click "Nächste Frage"
   }
 }
 

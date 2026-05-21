@@ -7,6 +7,7 @@ export interface LiveParticipant {
   score: number;
   answeredCurrentQuestion: boolean;
   currentAnswerIds: string[];
+  revealSent: boolean;  // AUTONOMOUS: reveal already sent to this participant
   joinedAt: Date;
 }
 

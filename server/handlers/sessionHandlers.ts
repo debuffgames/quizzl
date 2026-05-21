@@ -45,6 +45,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       score: 0,
       answeredCurrentQuestion: false,
       currentAnswerIds: [],
+      revealSent: false,
       joinedAt: new Date(),
     });
 

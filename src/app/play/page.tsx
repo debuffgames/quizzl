@@ -38,15 +38,9 @@ interface TopScore {
 }
 
 type Phase =
-  | "loading"
-  | "error"
-  | "waiting"
-  | "question"
-  | "answered"
-  | "revealed"
-  | "scoreboard"
-  | "ended"
-  | "paused";
+  | "loading" | "error" | "waiting"
+  | "question" | "answered" | "revealed"
+  | "scoreboard" | "ended" | "paused";
 
 export default function PlayPage() {
   return <Suspense><PlayContent /></Suspense>;
@@ -71,42 +65,43 @@ function PlayContent() {
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // Ref so socket event handlers (stale closures) can read current gameMode
   const gameModeRef = useRef<"AUTONOMOUS" | "BEAMER">("AUTONOMOUS");
+  const phaseRef = useRef<Phase>("loading");
+  // Buffer next question while on reveal screen so student controls the pace
+  const pendingQuestionRef = useRef<QuestionData | null>(null);
+  const finalScoreRef = useRef(0);
 
-  const clearTimer = () => {
-    if (timerRef.current) {
-      clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-  };
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { finalScoreRef.current = finalScore; }, [finalScore]);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  }, []);
 
   const startTimer = useCallback((secs: number) => {
     clearTimer();
     setTimeLeft(secs);
     timerRef.current = setInterval(() => {
       setTimeLeft((t) => {
-        if (t === null || t <= 1) {
-          clearTimer();
-          return 0;
-        }
+        if (t === null || t <= 1) { clearTimer(); return 0; }
         return t - 1;
       });
     }, 1000);
-  }, []);
+  }, [clearTimer]);
 
-  const notifyReady = () => window.parent.postMessage({ type: "READY" }, "*");
-  const notifyProgress = (index: number, total: number, score: number) =>
-    window.parent.postMessage({ type: "PROGRESS", progress: total > 0 ? index / total : 0, score }, "*");
-  const notifyComplete = (score: number) =>
-    window.parent.postMessage({ type: "COMPLETE", score }, "*");
+  const applyQuestion = useCallback((data: QuestionData) => {
+    clearTimer();
+    setQuestion(data);
+    setSelectedIds([]);
+    setSubmitted(false);
+    setReveal(null);
+    setPhase("question");
+    if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
+    window.parent.postMessage({ type: "PROGRESS", progress: data.total > 0 ? data.index / data.total : 0, score: 0 }, "*");
+  }, [clearTimer, startTimer]);
 
   useEffect(() => {
-    if (!lobbyId || !token) {
-      setError("Fehlende Parameter");
-      setPhase("error");
-      return;
-    }
+    if (!lobbyId || !token) { setError("Fehlende Parameter"); setPhase("error"); return; }
 
     fetch("/api/auth/module-token", {
       method: "POST",
@@ -114,11 +109,7 @@ function PlayContent() {
       body: JSON.stringify({ token }),
       credentials: "include",
     }).then((res) => {
-      if (!res.ok) {
-        setError("Authentifizierung fehlgeschlagen");
-        setPhase("error");
-        return;
-      }
+      if (!res.ok) { setError("Authentifizierung fehlgeschlagen"); setPhase("error"); return; }
 
       const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
       const socket = io(socketUrl, { withCredentials: true });
@@ -126,33 +117,25 @@ function PlayContent() {
 
       socket.on("connect", () => {
         socket.emit(QUIZ_EVENTS.JOIN, { lobbyId, token }, (ack: { ok: boolean; gameMode?: string; error?: string }) => {
-          if (!ack.ok) {
-            setError(ack.error ?? "Beitreten fehlgeschlagen");
-            setPhase("error");
-            return;
-          }
+          if (!ack.ok) { setError(ack.error ?? "Beitreten fehlgeschlagen"); setPhase("error"); return; }
           const mode = (ack.gameMode as "AUTONOMOUS" | "BEAMER") ?? "AUTONOMOUS";
           gameModeRef.current = mode;
           setGameMode(mode);
           setPhase("waiting");
-          notifyReady();
+          window.parent.postMessage({ type: "READY" }, "*");
         });
       });
 
-      socket.on("connect_error", () => {
-        setError("Verbindung zum Server fehlgeschlagen");
-        setPhase("error");
-      });
+      socket.on("connect_error", () => { setError("Verbindung zum Server fehlgeschlagen"); setPhase("error"); });
 
       socket.on(QUIZ_EVENTS.QUESTION, (data: QuestionData) => {
-        clearTimer();
-        setQuestion(data);
-        setSelectedIds([]);
-        setSubmitted(false);
-        setReveal(null);
-        setPhase("question");
-        if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
-        notifyProgress(data.index, data.total, 0);
+        pendingQuestionRef.current = null;
+        // Buffer if student is viewing their reveal — they control when to advance
+        if (phaseRef.current === "revealed") {
+          pendingQuestionRef.current = data;
+          return;
+        }
+        applyQuestion(data);
       });
 
       socket.on(QUIZ_EVENTS.TIMER_SYNC, ({ remainingSecs }: { remainingSecs: number }) => {
@@ -165,29 +148,26 @@ function PlayContent() {
         setFinalScore(data.totalScore);
         setPhase("revealed");
         setQuestion((q) => {
-          if (q) notifyProgress(q.index + 1, q.total, data.totalScore);
+          if (q) window.parent.postMessage({ type: "PROGRESS", progress: (q.index + 1) / q.total, score: data.totalScore }, "*");
           return q;
         });
       });
 
       socket.on(QUIZ_EVENTS.SCOREBOARD, (data: { topN: TopScore[] }) => {
         setTopScores(data.topN);
-        // In AUTONOMOUS mode the server auto-advances — don't interrupt the revealed/waiting screen
         if (gameModeRef.current !== "AUTONOMOUS") setPhase("scoreboard");
       });
 
       socket.on(QUIZ_EVENTS.END, (data: { topScores?: TopScore[]; finalRank?: number; totalScore?: number }) => {
         clearTimer();
+        pendingQuestionRef.current = null;
         if (data.topScores) setTopScores(data.topScores);
         if (data.totalScore !== undefined) setFinalScore(data.totalScore);
         setPhase("ended");
-        notifyComplete(data.totalScore ?? finalScore);
+        window.parent.postMessage({ type: "COMPLETE", score: data.totalScore ?? finalScoreRef.current }, "*");
       });
 
-      socket.on(QUIZ_EVENTS.PAUSE, () => {
-        setPhase((p) => { setPrevPhase(p); return "paused"; });
-        clearTimer();
-      });
+      socket.on(QUIZ_EVENTS.PAUSE, () => { setPhase((p) => { setPrevPhase(p); return "paused"; }); clearTimer(); });
       socket.on(QUIZ_EVENTS.RESUME, () => {
         setPhase(prevPhase);
         if (question?.timeLimitSecs && timeLeft && timeLeft > 0) startTimer(timeLeft);
@@ -195,17 +175,10 @@ function PlayContent() {
     });
 
     const handleMessage = (event: MessageEvent) => {
-      if (event.data?.type === "PAUSE") socketRef.current?.emit(QUIZ_EVENTS.PAUSE);
-      if (event.data?.type === "RESUME") socketRef.current?.emit(QUIZ_EVENTS.RESUME);
       if (event.data?.type === "END") { clearTimer(); setPhase("ended"); }
     };
     window.addEventListener("message", handleMessage);
-
-    return () => {
-      clearTimer();
-      socketRef.current?.disconnect();
-      window.removeEventListener("message", handleMessage);
-    };
+    return () => { clearTimer(); socketRef.current?.disconnect(); window.removeEventListener("message", handleMessage); };
   }, [lobbyId, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submitAnswer = useCallback(() => {
@@ -222,7 +195,6 @@ function PlayContent() {
       setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
     } else {
       setSelectedIds([id]);
-      // Auto-submit only in BEAMER mode (tap → instant); AUTONOMOUS uses explicit button
       if (gameModeRef.current === "BEAMER") {
         setSubmitted(true);
         socketRef.current?.emit(QUIZ_EVENTS.SUBMIT_ANSWER, { questionId: question.id, answerIds: [id] });
@@ -231,199 +203,247 @@ function PlayContent() {
     }
   };
 
-  // ─── Full-screen states ────────────────────────────────────────────────────
+  const goNext = useCallback(() => {
+    const pending = pendingQuestionRef.current;
+    pendingQuestionRef.current = null;
+    if (pending) {
+      applyQuestion(pending);
+    } else {
+      setPhase("waiting");
+    }
+  }, [applyQuestion]);
 
-  if (phase === "loading") return <Screen><Spinner /><p className="mt-4 text-gray-500">Verbinde...</p></Screen>;
-  if (phase === "error") return <Screen><p className="text-red-600 font-semibold text-lg">{error}</p></Screen>;
-  if (phase === "paused") return <Screen><p className="text-2xl font-bold text-gray-600">⏸ Pause</p></Screen>;
-  if (phase === "waiting") return <Screen><p className="text-gray-500 text-lg">Warte auf die erste Frage...</p><Spinner /></Screen>;
+  // ─── Screens ─────────────────────────────────────────────────────────────────
 
-  if (phase === "ended") {
-    return (
-      <Screen>
-        <h2 className="text-2xl font-bold mb-2">Quiz beendet!</h2>
-        <p className="text-4xl font-bold text-indigo-600 mb-6">{finalScore} Punkte</p>
-        {topScores.length > 0 && (
-          <div className="w-full max-w-sm">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase mb-2">Top-Ergebnisse</h3>
-            {topScores.slice(0, 5).map((s) => (
-              <div key={s.rank} className="flex items-center gap-3 py-1">
-                <span className="text-gray-400 w-6 text-right">{s.rank}.</span>
-                <span className="flex-1">{s.displayName}</span>
-                <span className="font-semibold">{s.score}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Screen>
-    );
-  }
+  if (phase === "loading") return (
+    <FullScreen bg="bg-[#02512c]">
+      <Spinner />
+      <p className="mt-4 text-green-200 font-medium">Verbinde...</p>
+    </FullScreen>
+  );
 
-  if (phase === "scoreboard" && topScores.length > 0) {
-    return (
-      <Screen>
-        <h2 className="text-xl font-bold mb-4">Zwischenstand</h2>
-        <div className="w-full max-w-sm space-y-1">
-          {topScores.map((s) => (
-            <div key={s.rank} className={`flex items-center gap-3 py-2 px-3 rounded-lg ${s.rank === 1 ? "bg-yellow-50 border border-yellow-200" : "bg-gray-50"}`}>
-              <span className="text-gray-500 w-6 text-right text-sm">{s.rank}.</span>
-              <span className="flex-1 font-medium">{s.displayName}</span>
-              <span className="font-bold">{s.score}</span>
+  if (phase === "error") return (
+    <FullScreen bg="bg-[#02512c]">
+      <div className="bg-white/10 rounded-2xl px-6 py-5 text-center">
+        <p className="text-4xl mb-3">⚠️</p>
+        <p className="text-white font-bold text-lg">{error}</p>
+      </div>
+    </FullScreen>
+  );
+
+  if (phase === "paused") return (
+    <FullScreen bg="bg-gray-800">
+      <div className="text-6xl mb-4">⏸</div>
+      <p className="text-white text-2xl font-bold">Pause</p>
+    </FullScreen>
+  );
+
+  if (phase === "waiting") return (
+    <FullScreen bg="bg-[#02512c]">
+      <Spinner />
+      <p className="mt-5 text-white text-xl font-bold">Warte auf nächste Frage...</p>
+    </FullScreen>
+  );
+
+  if (phase === "ended") return (
+    <FullScreen bg="bg-[#02512c]">
+      <p className="text-white/70 text-sm font-medium uppercase tracking-widest mb-2">Quiz beendet</p>
+      <p className="text-white text-6xl font-black mb-1">{finalScore}</p>
+      <p className="text-green-200 text-lg font-semibold mb-8">Punkte</p>
+      {topScores.length > 0 && (
+        <div className="w-full max-w-xs bg-white/10 rounded-2xl overflow-hidden">
+          {topScores.slice(0, 5).map((s, i) => (
+            <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 ${i < topScores.length - 1 ? "border-b border-white/10" : ""}`}>
+              <span className={`text-lg font-black w-7 text-center ${s.rank === 1 ? "text-yellow-300" : "text-white/50"}`}>{s.rank}</span>
+              <span className="flex-1 text-white font-semibold truncate">{s.displayName}</span>
+              <span className="text-white font-bold">{s.score}</span>
             </div>
           ))}
         </div>
-      </Screen>
-    );
-  }
+      )}
+    </FullScreen>
+  );
+
+  if (phase === "scoreboard" && topScores.length > 0) return (
+    <FullScreen bg="bg-[#02512c]">
+      <p className="text-white/70 text-xs font-semibold uppercase tracking-widest mb-4">Zwischenstand</p>
+      <div className="w-full max-w-xs bg-white/10 rounded-2xl overflow-hidden">
+        {topScores.map((s, i) => (
+          <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 ${i < topScores.length - 1 ? "border-b border-white/10" : ""} ${s.rank === 1 ? "bg-yellow-400/20" : ""}`}>
+            <span className={`text-lg font-black w-7 text-center ${s.rank === 1 ? "text-yellow-300" : "text-white/50"}`}>{s.rank}</span>
+            <span className="flex-1 text-white font-semibold truncate">{s.displayName}</span>
+            <span className="text-white font-bold">{s.score}</span>
+          </div>
+        ))}
+      </div>
+    </FullScreen>
+  );
 
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
-    const isBeamerReveal = gameMode === "BEAMER";
     return (
-      <Screen>
-        <div className="text-5xl mb-3">{correct ? "✓" : "✗"}</div>
-        <p className={`text-2xl font-bold mb-1 ${correct ? "text-green-600" : "text-red-500"}`}>
-          {correct ? "Richtig!" : "Falsch!"}
-        </p>
-        {correct && <p className="text-3xl font-bold text-indigo-600 mb-1">+{reveal.scoreGained}</p>}
-        <p className="text-gray-500 text-sm">Gesamt: {reveal.totalScore} Punkte</p>
+      <FullScreen bg={correct ? "bg-emerald-600" : "bg-rose-600"}>
+        <div className="text-7xl mb-3">{correct ? "✓" : "✗"}</div>
+        <p className="text-white text-3xl font-black mb-1">{correct ? "Richtig!" : "Falsch!"}</p>
+        {correct && (
+          <p className="text-white/90 text-2xl font-bold mb-1">+{reveal.scoreGained} Punkte</p>
+        )}
+        <p className="text-white/70 text-sm mb-8">Gesamt: {reveal.totalScore} Punkte</p>
+
         {question && (
-          <div className="mt-6 w-full max-w-sm space-y-2">
-            {question.answers.map((a, i) => {
+          <div className="w-full max-w-sm space-y-2 mb-6">
+            {question.answers.map((a) => {
+              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
               const isCorrect = reveal.correctAnswerIds.includes(a.id);
               const wasSelected = selectedIds.includes(a.id);
-              const color = ANSWER_COLORS[i % ANSWER_COLORS.length];
               return (
-                <div key={a.id} className={`flex items-center gap-3 p-3 rounded-lg border-2 ${
-                  isCorrect ? "border-green-400 bg-green-50" : wasSelected ? "border-red-300 bg-red-50" : "border-gray-200 bg-gray-50"
+                <div key={a.id} className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 ${
+                  isCorrect
+                    ? "bg-white border-white text-gray-900"
+                    : wasSelected
+                    ? "bg-white/20 border-white/40 text-white"
+                    : "bg-white/10 border-white/20 text-white/70"
                 }`}>
-                  {isBeamerReveal && <span className={`w-8 h-8 rounded flex items-center justify-center text-sm font-bold ${color.bg} ${color.text}`}>{color.shape}</span>}
-                  {a.text && <span className="flex-1 text-sm">{a.text}</span>}
-                  {isCorrect && <span className="text-green-500 text-sm font-bold">✓</span>}
+                  <span className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 ${color.bg} ${color.text}`}>
+                    {color.shape}
+                  </span>
+                  {a.text && <span className="flex-1 text-sm font-medium leading-tight">{a.text}</span>}
+                  {isCorrect && <span className="text-green-600 font-bold text-lg">✓</span>}
                 </div>
               );
             })}
           </div>
         )}
-        {/* In AUTONOMOUS mode, show "Weiter" to dismiss reveal screen while server prepares next question */}
-        {!isBeamerReveal && (
-          <button
-            onClick={() => setPhase("waiting")}
-            className="mt-6 px-8 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"
-          >
-            Weiter →
-          </button>
-        )}
-      </Screen>
+
+        <button
+          onClick={goNext}
+          className="w-full max-w-sm py-4 bg-white text-gray-900 font-black text-lg rounded-2xl shadow-lg active:scale-95 transition-transform"
+        >
+          Nächste Frage →
+        </button>
+      </FullScreen>
     );
   }
 
-  if (!question) return <Screen><Spinner /></Screen>;
-
-  // ─── Question / answered phase ─────────────────────────────────────────────
+  if (!question) return <FullScreen bg="bg-[#02512c]"><Spinner /></FullScreen>;
 
   const isBeamer = gameMode === "BEAMER";
+  const isMultiple = question.answerType === "MULTIPLE_CHOICE";
+  const hasSelection = selectedIds.length > 0;
+  const answered = phase === "answered";
+
+  // ─── Question screen ──────────────────────────────────────────────────────
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-50">
+    <div className="flex flex-col min-h-screen bg-[#02512c]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-white border-b shrink-0">
-        <span className="text-sm text-gray-500">Frage {question.index + 1}/{question.total}</span>
+      <div className="flex items-center justify-between px-5 py-3 shrink-0">
+        <span className="text-green-200 text-sm font-semibold">
+          Frage {question.index + 1}<span className="text-green-400">/{question.total}</span>
+        </span>
         {timeLeft !== null && (
-          <span className={`text-lg font-bold tabular-nums ${timeLeft <= 5 ? "text-red-500" : "text-gray-700"}`}>
+          <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full font-black text-lg tabular-nums
+            ${timeLeft <= 5 ? "bg-red-500 text-white animate-pulse" : "bg-white/20 text-white"}`}>
             {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
-          </span>
+          </div>
         )}
       </div>
 
       {/* Question text */}
-      <div className="px-4 py-5 text-center shrink-0">
+      <div className="px-5 pb-5 shrink-0">
         {isBeamer ? (
-          <p className="text-gray-400 text-sm">Schau auf den Beamer</p>
+          <p className="text-green-300 text-base text-center font-medium">Schau auf den Beamer</p>
         ) : (
-          question.text && <p className="text-xl font-semibold leading-snug">{question.text}</p>
+          question.text && (
+            <p className="text-white text-xl font-bold leading-snug text-center">{question.text}</p>
+          )
         )}
       </div>
 
       {/* Answer area */}
-      {phase === "answered" ? (
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-gray-500 text-lg">Warte auf Auflösung...</p>
-        </div>
-      ) : isBeamer ? (
-        // BEAMER: 2x2 colored shape buttons, single-choice auto-submits on tap
-        <div className="flex-1 px-4 pb-4 grid grid-cols-2 gap-3 content-start">
-          {question.answers.map((a, i) => {
-            const color = ANSWER_COLORS[i % ANSWER_COLORS.length];
-            const isSelected = selectedIds.includes(a.id);
-            return (
+      <div className="flex-1 flex flex-col px-4 gap-3">
+        {answered ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-3">
+            <Spinner />
+            <p className="text-green-200 text-lg font-semibold">Antwort eingegangen...</p>
+          </div>
+        ) : isBeamer ? (
+          // BEAMER: 2x2 colored buttons, no text
+          <div className="grid grid-cols-2 gap-3 flex-1 content-start">
+            {question.answers.map((a) => {
+              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+              const isSelected = selectedIds.includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => toggleAnswer(a.id)}
+                  disabled={submitted}
+                  className={`flex flex-col items-center justify-center gap-2 p-5 rounded-2xl font-bold transition-all active:scale-95
+                    ${color.bg} ${color.text}
+                    ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-[#02512c] scale-95" : ""}
+                    ${submitted ? "opacity-50" : "cursor-pointer shadow-md"}
+                  `}
+                >
+                  <span className="text-3xl">{color.shape}</span>
+                </button>
+              );
+            })}
+            {/* BEAMER MULTIPLE_CHOICE submit */}
+            {isMultiple && hasSelection && (
               <button
-                key={a.id}
-                onClick={() => toggleAnswer(a.id)}
-                disabled={submitted}
-                className={`flex flex-col items-center justify-center gap-1 p-4 rounded-xl border-2 font-semibold transition-transform active:scale-95 cursor-pointer
-                  ${color.bg} ${color.text} ${color.border}
-                  ${isSelected ? "ring-4 ring-offset-1 ring-white/60 scale-95" : ""}
-                  ${submitted ? "opacity-50 cursor-not-allowed" : ""}
-                `}
+                onClick={submitAnswer}
+                className="col-span-2 py-4 bg-white text-gray-900 font-black text-base rounded-2xl shadow-lg active:scale-95 transition-transform"
               >
-                <span className="text-2xl">{color.shape}</span>
+                Antworten abgeben ({selectedIds.length})
               </button>
-            );
-          })}
-        </div>
-      ) : (
-        // AUTONOMOUS: text-only buttons stacked vertically, manual submit
-        <div className="flex-1 px-4 pb-2 flex flex-col gap-3">
-          {question.answers.map((a) => {
-            const isSelected = selectedIds.includes(a.id);
-            return (
-              <button
-                key={a.id}
-                onClick={() => toggleAnswer(a.id)}
-                disabled={submitted}
-                className={`w-full px-4 py-4 rounded-xl border-2 text-left font-medium text-sm transition-colors
-                  ${isSelected
-                    ? "border-indigo-500 bg-indigo-50 text-indigo-800"
-                    : "border-gray-200 bg-white text-gray-800 hover:border-gray-300"}
-                  ${submitted ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}
-                `}
-              >
-                {a.text}
-              </button>
-            );
-          })}
-        </div>
-      )}
+            )}
+          </div>
+        ) : (
+          // AUTONOMOUS: colorful buttons with text + submit directly below
+          <>
+            <div className="grid grid-cols-2 gap-3">
+              {question.answers.map((a) => {
+                const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+                const isSelected = selectedIds.includes(a.id);
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => toggleAnswer(a.id)}
+                    disabled={submitted}
+                    className={`flex flex-col items-start gap-1.5 p-4 rounded-2xl font-semibold transition-all active:scale-95 text-left
+                      ${color.bg} ${color.text}
+                      ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-[#02512c] scale-95" : "shadow-md"}
+                      ${submitted ? "opacity-50" : "cursor-pointer"}
+                    `}
+                  >
+                    <span className="text-xl">{color.shape}</span>
+                    {a.text && <span className="text-sm leading-tight">{a.text}</span>}
+                  </button>
+                );
+              })}
+            </div>
 
-      {/* Submit — AUTONOMOUS: for any selection; BEAMER: only for MULTIPLE_CHOICE */}
-      {!isBeamer && phase === "question" && selectedIds.length > 0 && (
-        <div className="px-4 pb-6 shrink-0">
-          <button
-            onClick={submitAnswer}
-            className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"
-          >
-            Antwort einloggen
-          </button>
-        </div>
-      )}
-      {isBeamer && question.answerType === "MULTIPLE_CHOICE" && phase === "question" && selectedIds.length > 0 && (
-        <div className="px-4 pb-4 shrink-0">
-          <button
-            onClick={submitAnswer}
-            className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors"
-          >
-            Antworten abgeben ({selectedIds.length})
-          </button>
-        </div>
-      )}
+            {/* Submit button directly below answers */}
+            {hasSelection && !submitted && (
+              <button
+                onClick={submitAnswer}
+                className="w-full py-4 bg-white text-[#02512c] font-black text-lg rounded-2xl shadow-lg active:scale-95 transition-transform mt-1"
+              >
+                {isMultiple ? `Antworten abgeben (${selectedIds.length})` : "Antwort einloggen"}
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="h-4 shrink-0" />
     </div>
   );
 }
 
-function Screen({ children }: { children: React.ReactNode }) {
+function FullScreen({ children, bg }: { children: React.ReactNode; bg?: string }) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen text-center px-6">
+    <div className={`flex flex-col items-center justify-center min-h-screen text-center px-6 ${bg ?? "bg-[#02512c]"}`}>
       {children}
     </div>
   );
@@ -431,6 +451,6 @@ function Screen({ children }: { children: React.ReactNode }) {
 
 function Spinner() {
   return (
-    <div className="w-8 h-8 border-4 border-indigo-300 border-t-indigo-600 rounded-full animate-spin" />
+    <div className="w-10 h-10 border-4 border-white/30 border-t-white rounded-full animate-spin" />
   );
 }
