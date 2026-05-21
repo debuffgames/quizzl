@@ -6,6 +6,7 @@ import { Suspense, useEffect, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { QUIZ_EVENTS } from "@/lib/socket/events";
+import * as XLSX from "xlsx";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -57,9 +58,93 @@ function suggestTimer(questionText: string, answers: { text: string }[]): number
 
 type Phase =
   | "loading" | "error"
-  | "quiz-list" | "quiz-editor"
+  | "quiz-list" | "quiz-editor" | "import"
   | "lobby"
   | "active" | "ended";
+
+// ─── Kahoot import parser ──────────────────────────────────────────────────────
+
+interface ParsedQuestion {
+  text: string;
+  answerType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "YES_NO";
+  timeLimitSecs: number;
+  points: number;
+  answers: { text: string; isCorrect: boolean; sortOrder: number }[];
+}
+
+function parseKahootXlsx(buffer: ArrayBuffer): ParsedQuestion[] {
+  const wb = XLSX.read(buffer, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: "" }) as string[][];
+
+  // Find header row: first row where a cell contains "Question"
+  let headerIdx = -1;
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    if (rows[i].some((c) => String(c).toLowerCase().includes("question"))) {
+      headerIdx = i;
+      break;
+    }
+  }
+  if (headerIdx === -1) throw new Error("Keine Kopfzeile mit 'Question' gefunden");
+
+  const headers = rows[headerIdx].map((c) => String(c).toLowerCase());
+  const col = (keywords: string[]) => headers.findIndex((h) => keywords.some((k) => h.includes(k)));
+
+  const qCol  = col(["question"]);
+  const a1Col = col(["answer 1"]);
+  const a2Col = col(["answer 2"]);
+  const a3Col = col(["answer 3"]);
+  const a4Col = col(["answer 4"]);
+  const timeCol    = col(["time limit", "time"]);
+  const correctCol = col(["correct answer"]);
+  const typeCol    = col(["question type", "type"]);
+
+  if (qCol === -1 || a1Col === -1 || correctCol === -1)
+    throw new Error("Pflicht-Spalten (Question, Answer 1, Correct answer) nicht gefunden");
+
+  const questions: ParsedQuestion[] = [];
+
+  for (let i = headerIdx + 1; i < rows.length; i++) {
+    const row = rows[i];
+    const text = String(row[qCol] ?? "").trim();
+    if (!text) continue;
+
+    // Skip non-quiz question types (polls, slides, etc.)
+    const qType = typeCol !== -1 ? String(row[typeCol] ?? "").toLowerCase() : "quiz";
+    if (qType && !["quiz", "true or false", ""].includes(qType)) continue;
+
+    const rawCorrect = String(row[correctCol] ?? "").trim();
+    const correctNums = rawCorrect.split(/[,;]/).map((s) => parseInt(s.trim(), 10)).filter((n) => !isNaN(n));
+
+    const rawAnswers = [a1Col, a2Col, a3Col, a4Col]
+      .filter((c) => c !== -1)
+      .map((c, idx) => ({ text: String(row[c] ?? "").trim(), idx: idx + 1 }))
+      .filter((a) => a.text !== "");
+
+    if (rawAnswers.length < 2) continue;
+
+    const isYesNo = qType === "true or false" ||
+      (rawAnswers.length === 2 && /^(yes|no|ja|nein|wahr|falsch|true|false)$/i.test(rawAnswers[0].text) && /^(yes|no|ja|nein|wahr|falsch|true|false)$/i.test(rawAnswers[1].text));
+
+    const answerType: ParsedQuestion["answerType"] = isYesNo
+      ? "YES_NO"
+      : correctNums.length > 1
+        ? "MULTIPLE_CHOICE"
+        : "SINGLE_CHOICE";
+
+    const answers = rawAnswers.map((a, sortOrder) => ({
+      text: a.text,
+      isCorrect: correctNums.includes(a.idx),
+      sortOrder,
+    }));
+
+    const timeLimitSecs = timeCol !== -1 ? (parseInt(String(row[timeCol] ?? ""), 10) || 20) : 20;
+
+    questions.push({ text, answerType, timeLimitSecs, points: 100, answers });
+  }
+
+  return questions;
+}
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
@@ -87,6 +172,12 @@ function TeacherContent() {
   const [editVisibility, setEditVisibility] = useState<"PRIVATE" | "SCHOOL" | "PUBLIC">("PRIVATE");
   const [editQuestions, setEditQuestions] = useState<QuestionInput[]>([]);
   const [savingQuiz, setSavingQuiz] = useState(false);
+
+  // Import state
+  const [importTitle, setImportTitle] = useState("");
+  const [importQuestions, setImportQuestions] = useState<ParsedQuestion[]>([]);
+  const [importError, setImportError] = useState("");
+  const [importSaving, setImportSaving] = useState(false);
 
   // Quiz selection
   const [selectedQuiz, setSelectedQuiz] = useState<QuizSummary | null>(null);
@@ -341,6 +432,56 @@ function TeacherContent() {
       idx !== qi ? q : { ...q, answers: q.answers.filter((_, aidx) => aidx !== ai) }
     ));
 
+  // ─── Import ───────────────────────────────────────────────────────────────
+
+  const openImport = () => {
+    setImportTitle("");
+    setImportQuestions([]);
+    setImportError("");
+    setPhase("import");
+  };
+
+  const handleImportFile = (file: File) => {
+    setImportError("");
+    setImportQuestions([]);
+    file.arrayBuffer().then((buf) => {
+      try {
+        const qs = parseKahootXlsx(buf);
+        if (qs.length === 0) { setImportError("Keine Fragen erkannt. Bitte Kahoot-Excel-Export verwenden."); return; }
+        setImportQuestions(qs);
+        if (!importTitle) setImportTitle(file.name.replace(/\.(xlsx|xls)$/i, ""));
+      } catch (e) {
+        setImportError(e instanceof Error ? e.message : "Fehler beim Lesen der Datei");
+      }
+    });
+  };
+
+  const saveImport = async () => {
+    if (!importTitle.trim() || importQuestions.length === 0) return;
+    setImportSaving(true);
+    try {
+      const res = await fetch("/api/quizzes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: importTitle, description: null, visibility: "PRIVATE" }),
+        credentials: "include",
+      });
+      const { id: quizId } = await res.json();
+      for (const [i, q] of importQuestions.entries()) {
+        await fetch(`/api/quizzes/${quizId}/questions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...q, sortOrder: i }),
+          credentials: "include",
+        });
+      }
+      await fetchQuizzes();
+      setPhase("quiz-list");
+    } finally {
+      setImportSaving(false);
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   if (phase === "loading") return <Layout><div className="flex items-center justify-center flex-1"><Spinner /></div></Layout>;
@@ -357,22 +498,27 @@ function TeacherContent() {
             ? <img src="/logo.png" alt="Quizzl" className="h-48 w-auto object-contain" />
             : <h1 className="font-bold text-lg">Quizzl</h1>
           }
-          <button onClick={() => openEditor(null)} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700">
-            + Neu
-          </button>
+          <div className="flex gap-2">
+            <button onClick={openImport} className="text-sm border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg hover:bg-gray-50">
+              ↑ Import
+            </button>
+            <button onClick={() => openEditor(null)} className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700">
+              + Neu
+            </button>
+          </div>
         </header>
         <div className="flex border-b">
           {(["own", "public"] as const).map((t) => (
             <button key={t} onClick={() => setListTab(t)}
               className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${listTab === t ? "border-indigo-600 text-indigo-600" : "border-transparent text-gray-500 hover:text-gray-700"}`}>
-              {t === "own" ? "Meine Quizze" : "Entdecken"}
+              {t === "own" ? "Meine Quizzls" : "Entdecken"}
             </button>
           ))}
         </div>
         <div className="flex-1 overflow-y-auto divide-y">
           {list.length === 0 && (
             <p className="text-gray-400 text-sm text-center py-12">
-              {listTab === "own" ? "Noch keine Quizze. Erstelle dein erstes Quiz!" : "Keine öffentlichen Quizze gefunden."}
+              {listTab === "own" ? "Noch keine Quizzls. Erstell dein erstes Quizzl!" : "Keine öffentlichen Quizzls gefunden."}
             </p>
           )}
           {list.map((q) => (
@@ -411,13 +557,80 @@ function TeacherContent() {
     );
   }
 
+  // ── IMPORT ──
+  if (phase === "import") {
+    return (
+      <Layout>
+        <header className="flex items-center gap-3 px-4 py-3 border-b">
+          <button onClick={() => setPhase("quiz-list")} className="text-gray-500 hover:text-gray-800">←</button>
+          <h1 className="font-bold text-lg flex-1">Quizzl importieren</h1>
+        </header>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Titel</label>
+            <input value={importTitle} onChange={(e) => setImportTitle(e.target.value)} maxLength={200}
+              className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              placeholder="Quizzl-Titel" />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Format</label>
+            <div className="border rounded-lg px-3 py-2 text-sm text-gray-500 bg-gray-50">Kahoot (.xlsx)</div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-2">Datei</label>
+            <label
+              className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImportFile(f); }}
+            >
+              <span className="text-2xl">📂</span>
+              <span className="text-sm text-gray-600 font-medium">Datei hierher ziehen</span>
+              <span className="text-xs text-gray-400">oder klicken zum Auswählen (.xlsx)</span>
+              <input type="file" accept=".xlsx,.xls" className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }} />
+            </label>
+          </div>
+
+          {importError && (
+            <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{importError}</div>
+          )}
+
+          {importQuestions.length > 0 && (
+            <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
+              ✓ {importQuestions.length} Fragen erkannt
+              <div className="mt-1.5 space-y-0.5 max-h-40 overflow-y-auto">
+                {importQuestions.map((q, i) => (
+                  <div key={i} className="text-xs text-green-600 truncate">
+                    {i + 1}. {q.text}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-4 pb-4">
+          <button
+            onClick={saveImport}
+            disabled={!importTitle.trim() || importQuestions.length === 0 || importSaving}
+            className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+          >
+            {importSaving ? "Importieren..." : `Quizzl importieren (${importQuestions.length} Fragen)`}
+          </button>
+        </div>
+      </Layout>
+    );
+  }
+
   // ── QUIZ EDITOR ──
   if (phase === "quiz-editor") {
     return (
       <Layout>
         <header className="flex items-center gap-3 px-4 py-3 border-b">
           <button onClick={() => setPhase("quiz-list")} className="text-gray-500 hover:text-gray-800">←</button>
-          <h1 className="font-bold text-lg flex-1">{editingQuiz ? "Quiz bearbeiten" : "Neues Quiz"}</h1>
+          <h1 className="font-bold text-lg flex-1">{editingQuiz ? "Quizzl bearbeiten" : "Neues Quizzl"}</h1>
           <button onClick={saveQuiz} disabled={!editTitle.trim() || savingQuiz}
             className="text-sm bg-indigo-600 text-white px-3 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50">
             {savingQuiz ? "Speichern..." : "Speichern"}
@@ -430,7 +643,7 @@ function TeacherContent() {
               <label className="block text-xs font-medium text-gray-500 mb-1">Titel</label>
               <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} maxLength={200}
                 className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="Quiz-Titel" />
+                placeholder="Quizzl-Titel" />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1">Beschreibung (optional)</label>
@@ -702,7 +915,7 @@ function TeacherContent() {
               )}
             </>
           ) : (
-            <p className="text-center text-xs text-gray-400 py-1">Quiz läuft automatisch</p>
+            <p className="text-center text-xs text-gray-400 py-1">Quizzl läuft automatisch</p>
           )}
           <button onClick={endSession} className="w-full py-2 text-red-500 text-sm hover:bg-red-50 rounded-xl transition-colors">
             Session beenden
@@ -717,7 +930,7 @@ function TeacherContent() {
     return (
       <Layout>
         <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4">
-          <h2 className="text-2xl font-bold">Quiz beendet!</h2>
+          <h2 className="text-2xl font-bold">Quizzl beendet!</h2>
           {topScores.length > 0 && (
             <div className="w-full max-w-sm space-y-2">
               <p className="text-xs text-gray-400 uppercase font-medium text-center mb-2">Endstand</p>

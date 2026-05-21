@@ -75,7 +75,7 @@ function ConfigContent() {
     <div className="flex flex-col gap-3 p-3 text-sm bg-white h-full">
       {/* Quiz dropdown */}
       <div>
-        <label className="block text-xs font-medium text-gray-500 mb-1">Quiz</label>
+        <label className="block text-xs font-medium text-gray-500 mb-1">Quizzl</label>
         {loading ? (
           <div className="h-9 rounded-lg bg-gray-100 animate-pulse" />
         ) : (
@@ -84,7 +84,7 @@ function ConfigContent() {
             onChange={(e) => handleQuizChange(e.target.value)}
             className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
           >
-            <option value="">– Quiz auswählen –</option>
+            <option value="">– Quizzl auswählen –</option>
             {quizzes.map((q) => (
               <option key={q.id} value={q.id}>
                 {q.title} ({q._count.questions} Fragen)
@@ -119,7 +119,7 @@ function ConfigContent() {
         onClick={openEditor}
         className="w-full rounded-lg border border-gray-200 py-1.5 text-xs font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700 transition-colors"
       >
-        ✏ Quiz erstellen / bearbeiten ↗
+        ✏ Quizzl erstellen / bearbeiten ↗
       </button>
     </div>
   );
