@@ -46,6 +46,7 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
       answerType: question.answerType,
       answers: question.answers.map((a) => ({ id: a.id, text: a.text, sortOrder: a.sortOrder })),
       timeLimitSecs: question.timeLimitSecs,
+      explanation: question.explanation ?? null,
       remainingSecs: session.questionTimerEnd ? Math.max(0, Math.ceil((session.questionTimerEnd - Date.now()) / 1000)) : null,
       index: nextIndex,
       total: questions.length,
@@ -115,6 +116,7 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
     answerType: question.answerType,
     answers: question.answers.map((a) => ({ id: a.id, text: a.text, sortOrder: a.sortOrder })),
     timeLimitSecs: question.timeLimitSecs,
+    explanation: question.explanation ?? null,
     index: nextIndex,
     total: quiz.questions.length,
   };

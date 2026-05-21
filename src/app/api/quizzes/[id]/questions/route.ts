@@ -16,6 +16,7 @@ const CreateQuestionSchema = z.object({
   timeLimitSecs: z.number().int().min(5).max(120).nullable().optional(),
   points: z.number().int().min(1).max(10000).default(100),
   answerType: z.enum(["SINGLE_CHOICE", "MULTIPLE_CHOICE", "YES_NO"]).default("SINGLE_CHOICE"),
+  explanation: z.string().max(1000).nullable().optional(),
   answers: z.array(AnswerSchema).min(2).max(4),
 });
 
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       timeLimitSecs: parsed.data.timeLimitSecs ?? null,
       points: parsed.data.points,
       answerType: parsed.data.answerType,
+      explanation: parsed.data.explanation ?? null,
       answers: { create: parsed.data.answers },
     },
     include: { answers: { orderBy: { sortOrder: "asc" } } },

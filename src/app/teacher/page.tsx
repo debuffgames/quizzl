@@ -18,11 +18,12 @@ interface AnswerInput { text: string; isCorrect: boolean; sortOrder: number; }
 interface QuestionInput {
   id?: string; text: string; answerType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "YES_NO";
   timeLimitSecs: number | null; points: number; answers: AnswerInput[];
+  explanation?: string | null;
 }
 interface AnswerData { id: string; text: string; isCorrect: boolean; sortOrder: number; }
 interface QuestionData {
   id: string; text: string; answerType: string; timeLimitSecs: number | null; points: number;
-  answers: AnswerData[];
+  answers: AnswerData[]; explanation?: string | null;
 }
 interface FullQuiz {
   id: string; title: string; description: string | null; visibility: string;
@@ -220,7 +221,7 @@ function TeacherContent() {
       setEditVisibility(data.visibility as "PRIVATE" | "SCHOOL" | "PUBLIC");
       setEditQuestions(data.questions.map((q) => ({
         id: q.id, text: q.text, answerType: q.answerType as QuestionInput["answerType"],
-        timeLimitSecs: q.timeLimitSecs, points: q.points,
+        timeLimitSecs: q.timeLimitSecs, points: q.points, explanation: q.explanation ?? null,
         answers: q.answers.map((a) => ({ text: a.text, isCorrect: a.isCorrect, sortOrder: a.sortOrder })),
       })));
     } else {
@@ -465,6 +466,9 @@ function TeacherContent() {
                       <textarea value={q.text} onChange={(e) => updateQuestion(qi, { text: e.target.value })}
                         rows={2} className="w-full border rounded-lg px-3 py-2 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
                         placeholder="Fragetext" />
+                      <textarea value={q.explanation ?? ""} onChange={(e) => updateQuestion(qi, { explanation: e.target.value || null })}
+                        rows={2} className="w-full border rounded-lg px-3 py-2 text-xs resize-none focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white text-gray-600"
+                        placeholder="Erklärung (optional) – wird nach der Auflösung angezeigt" />
                       <div className="flex gap-2 flex-wrap">
                         <select value={q.answerType} onChange={(e) => {
                           const at = e.target.value as QuestionInput["answerType"];

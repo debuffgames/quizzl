@@ -23,6 +23,7 @@ interface QuestionData {
   remainingSecs?: number | null;
   index: number;
   total: number;
+  explanation?: string | null;
 }
 
 interface RevealData {
@@ -325,6 +326,13 @@ function PlayContent() {
                 </div>
               );
             })}
+          </div>
+        )}
+
+        {question?.explanation && (
+          <div className="w-full mb-4 px-3 py-2.5 rounded-xl bg-blue-50 border border-blue-100">
+            <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide mb-1">Erklärung</p>
+            <p className="text-sm text-blue-900 leading-snug">{question.explanation}</p>
           </div>
         )}
 

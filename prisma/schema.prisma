@@ -41,6 +41,7 @@ model Question {
   points        Int     @default(100)
   // "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "YES_NO"
   answerType    String  @default("SINGLE_CHOICE")
+  explanation   String? // shown to students after reveal
 
   answers Answer[]
 

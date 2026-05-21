@@ -16,6 +16,7 @@ const UpdateQuestionSchema = z.object({
   timeLimitSecs: z.number().int().min(5).max(120).nullable().optional(),
   points: z.number().int().min(1).max(10000).optional(),
   answerType: z.enum(["SINGLE_CHOICE", "MULTIPLE_CHOICE", "YES_NO"]).optional(),
+  explanation: z.string().max(1000).nullable().optional(),
   answers: z.array(AnswerSchema).min(2).max(4).optional(),
 });
 
