@@ -2,6 +2,7 @@ export const QUIZ_EVENTS = {
   // Student → Server
   JOIN: "quiz:join",
   SUBMIT_ANSWER: "quiz:submitAnswer",
+  READY_FOR_NEXT: "quiz:readyForNext",  // AUTONOMOUS: student ready, send next question immediately
 
   // Teacher → Server
   NEXT_QUESTION: "quiz:nextQuestion",

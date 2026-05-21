@@ -24,6 +24,34 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     await revealAnswer(io, session, sessionManager);
   });
 
+  // AUTONOMOUS: student signals readiness → send next question immediately to just them
+  socket.on(QUIZ_EVENTS.READY_FOR_NEXT, async () => {
+    const entry = sessionManager.getParticipantBySocket(socket.id);
+    if (!entry || entry.session.gameMode !== "AUTONOMOUS") return;
+    const { session } = entry;
+
+    const questions = await prisma.question.findMany({
+      where: { quizId: session.quizId },
+      orderBy: { sortOrder: "asc" },
+      include: { answers: { orderBy: { sortOrder: "asc" } } },
+    });
+
+    const nextIndex = session.currentQuestionIndex + 1;
+    if (nextIndex >= questions.length) return; // last question — END event will come from the timer
+
+    const question = questions[nextIndex];
+    socket.emit(QUIZ_EVENTS.QUESTION, {
+      id: question.id,
+      text: question.text,
+      answerType: question.answerType,
+      answers: question.answers.map((a) => ({ id: a.id, text: a.text, sortOrder: a.sortOrder })),
+      timeLimitSecs: question.timeLimitSecs,
+      remainingSecs: session.questionTimerEnd ? Math.max(0, Math.ceil((session.questionTimerEnd - Date.now()) / 1000)) : null,
+      index: nextIndex,
+      total: questions.length,
+    });
+  });
+
   socket.on(QUIZ_EVENTS.END_SESSION, async () => {
     const sessionId = getTeacherSession(socket, sessionManager);
     if (!sessionId) return;
