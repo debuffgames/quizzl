@@ -385,7 +385,7 @@ function TeacherContent() {
         const res = await fetch("/api/quizzes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: editTitle, description: editDesc || null, visibility: editVisibility }),
+          body: JSON.stringify({ title: editTitle, description: editDesc.trim() || undefined, visibility: editVisibility }),
           credentials: "include",
         });
         const data = await res.json();
@@ -394,7 +394,7 @@ function TeacherContent() {
         await fetch(`/api/quizzes/${quizId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: editTitle, description: editDesc || null, visibility: editVisibility }),
+          body: JSON.stringify({ title: editTitle, description: editDesc.trim() || undefined, visibility: editVisibility }),
           credentials: "include",
         });
       }
@@ -534,7 +534,7 @@ function TeacherContent() {
         const res = await fetch("/api/quizzes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: item.title, description: null, visibility: "PRIVATE" }),
+          body: JSON.stringify({ title: item.title, visibility: "PRIVATE" }),
           credentials: "include",
         });
         const { id: quizId } = await res.json();
