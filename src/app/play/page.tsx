@@ -152,6 +152,9 @@ function PlayContent() {
       });
 
       socket.on(QUIZ_EVENTS.ANSWER_REVEAL, (data: RevealData) => {
+        // Ignore reveals for questions the student hasn't seen yet (server advanced
+        // while student was still reading the previous reveal screen).
+        if (phaseRef.current === "revealed") return;
         clearTimer();
         setReveal(data);
         setFinalScore(data.totalScore);
