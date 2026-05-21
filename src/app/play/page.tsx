@@ -347,12 +347,12 @@ function PlayContent() {
     );
   }
 
-  if (!question) return <Shell><Spinner /></Shell>;
-
   const isBeamer = gameMode === "BEAMER";
-  const isMultiple = question.answerType === "MULTIPLE_CHOICE";
+  const isMultiple = question?.answerType === "MULTIPLE_CHOICE";
   const hasSelection = selectedIds.length > 0;
   const answered = phase === "answered";
+
+  if (!question) return <Shell><Spinner /></Shell>;
 
   // ─── Question screen ──────────────────────────────────────────────────────
 
