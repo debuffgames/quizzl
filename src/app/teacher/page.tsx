@@ -46,6 +46,14 @@ const BEAMER_STYLES = [
   { bg: "bg-green-500",  text: "text-white",     symbol: "◆" },
 ] as const;
 
+// 1.5 words/s reading speed + 5s thinking buffer, rounded to nearest 5, clamped 10–60s
+function suggestTimer(questionText: string, answers: { text: string }[]): number {
+  const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+  const total = words(questionText) + answers.reduce((sum, a) => sum + words(a.text), 0);
+  const raw = Math.ceil(total / 1.5) + 5;
+  return Math.max(10, Math.min(60, Math.round(raw / 5) * 5));
+}
+
 type Phase =
   | "loading" | "error"
   | "quiz-list" | "quiz-editor"
@@ -290,7 +298,7 @@ function TeacherContent() {
       {
         text: "",
         answerType: "SINGLE_CHOICE",
-        timeLimitSecs: 30,
+        timeLimitSecs: 10,
         points: 100,
         answers: [
           { text: "", isCorrect: true, sortOrder: 0 },
@@ -303,12 +311,24 @@ function TeacherContent() {
   const removeQuestion = (i: number) => setEditQuestions((prev) => prev.filter((_, idx) => idx !== i));
 
   const updateQuestion = (i: number, patch: Partial<QuestionInput>) =>
-    setEditQuestions((prev) => prev.map((q, idx) => idx === i ? { ...q, ...patch } : q));
+    setEditQuestions((prev) => prev.map((q, idx) => {
+      if (idx !== i) return q;
+      const updated = { ...q, ...patch };
+      // Auto-recalculate timer when text changes (unless it's a manual timer edit)
+      if (("text" in patch) && !("timeLimitSecs" in patch)) {
+        updated.timeLimitSecs = suggestTimer(updated.text, updated.answers);
+      }
+      return updated;
+    }));
 
   const updateAnswer = (qi: number, ai: number, patch: Partial<AnswerInput>) =>
-    setEditQuestions((prev) => prev.map((q, idx) =>
-      idx !== qi ? q : { ...q, answers: q.answers.map((a, aidx) => aidx === ai ? { ...a, ...patch } : a) }
-    ));
+    setEditQuestions((prev) => prev.map((q, idx) => {
+      if (idx !== qi) return q;
+      const answers = q.answers.map((a, aidx) => aidx === ai ? { ...a, ...patch } : a);
+      // Auto-recalculate timer when answer text changes
+      const timeLimitSecs = ("text" in patch) ? suggestTimer(q.text, answers) : q.timeLimitSecs;
+      return { ...q, answers, timeLimitSecs };
+    }));
 
   const addAnswer = (qi: number) =>
     setEditQuestions((prev) => prev.map((q, idx) =>
