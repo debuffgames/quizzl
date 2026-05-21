@@ -218,9 +218,7 @@ function TeacherContent() {
 
   // Import state
   const [importTitle, setImportTitle] = useState("");
-  const [importQuestions, setImportQuestions] = useState<ParsedQuestion[]>([]);
   const [importError, setImportError] = useState("");
-  const [importSaving, setImportSaving] = useState(false);
 
   // Quiz selection
   const [selectedQuiz, setSelectedQuiz] = useState<QuizSummary | null>(null);
@@ -479,50 +477,28 @@ function TeacherContent() {
 
   const openImport = () => {
     setImportTitle("");
-    setImportQuestions([]);
     setImportError("");
     setPhase("import");
   };
 
   const handleImportFile = (file: File) => {
     setImportError("");
-    setImportQuestions([]);
     file.arrayBuffer().then((buf) => {
       try {
         const qs = parseKahootXlsx(buf);
         if (qs.length === 0) { setImportError("Keine Fragen erkannt. Bitte Kahoot-Excel-Export verwenden."); return; }
-        setImportQuestions(qs);
-        if (!importTitle) setImportTitle(file.name.replace(/\.(xlsx|xls)$/i, ""));
+        // Pre-fill the editor and jump straight into it
+        const title = importTitle.trim() || file.name.replace(/\.(xlsx|xls)$/i, "");
+        setEditingQuiz(null);
+        setEditTitle(title);
+        setEditDesc("");
+        setEditVisibility("PRIVATE");
+        setEditQuestions(qs);
+        setPhase("quiz-editor");
       } catch (e) {
         setImportError(e instanceof Error ? e.message : "Fehler beim Lesen der Datei");
       }
     });
-  };
-
-  const saveImport = async () => {
-    if (!importTitle.trim() || importQuestions.length === 0) return;
-    setImportSaving(true);
-    try {
-      const res = await fetch("/api/quizzes", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: importTitle, description: null, visibility: "PRIVATE" }),
-        credentials: "include",
-      });
-      const { id: quizId } = await res.json();
-      for (const [i, q] of importQuestions.entries()) {
-        await fetch(`/api/quizzes/${quizId}/questions`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...q, sortOrder: i }),
-          credentials: "include",
-        });
-      }
-      await fetchQuizzes();
-      setPhase("quiz-list");
-    } finally {
-      setImportSaving(false);
-    }
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -610,58 +586,31 @@ function TeacherContent() {
         </header>
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Titel</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Titel (optional — wird sonst aus Dateiname übernommen)</label>
             <input value={importTitle} onChange={(e) => setImportTitle(e.target.value)} maxLength={200}
               className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
               placeholder="Quizzl-Titel" />
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Format</label>
-            <div className="border rounded-lg px-3 py-2 text-sm text-gray-500 bg-gray-50">Kahoot (.xlsx)</div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-2">Datei</label>
+            <label className="block text-xs font-medium text-gray-500 mb-2">Kahoot-Export (.xlsx) auswählen</label>
             <label
-              className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl p-8 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors"
+              className="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-xl p-10 cursor-pointer hover:border-indigo-400 hover:bg-indigo-50/30 transition-colors"
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) handleImportFile(f); }}
             >
-              <span className="text-2xl">📂</span>
+              <span className="text-3xl">📂</span>
               <span className="text-sm text-gray-600 font-medium">Datei hierher ziehen</span>
-              <span className="text-xs text-gray-400">oder klicken zum Auswählen (.xlsx)</span>
+              <span className="text-xs text-gray-400">oder klicken zum Auswählen</span>
               <input type="file" accept=".xlsx,.xls" className="hidden"
                 onChange={(e) => { const f = e.target.files?.[0]; if (f) handleImportFile(f); }} />
             </label>
+            <p className="text-xs text-gray-400 mt-2 text-center">Nach dem Einlesen öffnet sich der Editor — Fragen können dann bearbeitet, entfernt oder ergänzt werden.</p>
           </div>
 
           {importError && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-600">{importError}</div>
           )}
-
-          {importQuestions.length > 0 && (
-            <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700">
-              ✓ {importQuestions.length} Fragen erkannt
-              <div className="mt-1.5 space-y-0.5 max-h-40 overflow-y-auto">
-                {importQuestions.map((q, i) => (
-                  <div key={i} className="text-xs text-green-600 truncate">
-                    {i + 1}. {q.text}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="px-4 pb-4">
-          <button
-            onClick={saveImport}
-            disabled={!importTitle.trim() || importQuestions.length === 0 || importSaving}
-            className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-          >
-            {importSaving ? "Importieren..." : `Quizzl importieren (${importQuestions.length} Fragen)`}
-          </button>
         </div>
       </Layout>
     );
