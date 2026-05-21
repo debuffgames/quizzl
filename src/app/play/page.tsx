@@ -71,11 +71,18 @@ function PlayContent() {
   const token = searchParams.get("token") ?? "";
 
   const [init, setInit] = useState<Init>({ status: "loading" });
+  const startTimeRef = useRef(Date.now());
 
   useEffect(() => {
     if (!lobbyId || !token) { setInit({ status: "error", message: "Fehlende Parameter" }); return; }
 
     let socket: Socket;
+
+    const setReady = (result: Exclude<Init, { status: "loading" | "error" }>) => {
+      const remaining = Math.max(0, 3000 - (Date.now() - startTimeRef.current));
+      if (remaining > 0) setTimeout(() => setInit(result), remaining);
+      else setInit(result);
+    };
 
     fetch("/api/auth/module-token", {
       method: "POST",
@@ -104,12 +111,12 @@ function PlayContent() {
               const r = await fetch(`/api/sessions/${encodeURIComponent(lobbyId)}/quiz`, { credentials: "include" });
               if (!r.ok) throw new Error();
               const data = await r.json();
-              setInit({ status: "autonomous", questions: data.questions, socket });
+              setReady({ status: "autonomous", questions: data.questions, socket });
             } catch {
               setInit({ status: "error", message: "Quiz konnte nicht geladen werden" });
             }
           } else {
-            setInit({ status: "beamer", socket });
+            setReady({ status: "beamer", socket });
           }
         });
       });
@@ -226,12 +233,7 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
 
     let gained = 0;
     if (correct && !timedOut) {
-      if (q.timeLimitSecs && timeLeftRef.current !== null && timeLeftRef.current > 0) {
-        const bonus = Math.max(0.5, timeLeftRef.current / q.timeLimitSecs);
-        gained = Math.round(q.points * bonus);
-      } else {
-        gained = q.points;
-      }
+      gained = q.points;
     }
 
     scoreRef.current += gained;
@@ -650,7 +652,7 @@ function GameCard({ children, question, timeLeft }: {
 }) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6">
-      <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
         {question && (
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
             <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
@@ -666,14 +668,14 @@ function GameCard({ children, question, timeLeft }: {
           </div>
         )}
         {question?.text !== undefined && (
-          <div className="px-5 pt-4 pb-3 min-h-[80px] flex items-center justify-center">
+          <div className="px-5 pt-4 pb-3 min-h-[88px] flex items-center justify-center">
             {question.text
               ? <p className="text-gray-900 text-base font-bold leading-snug text-center">{question.text}</p>
               : <p className="text-gray-400 text-sm text-center">Schau auf den Beamer</p>
             }
           </div>
         )}
-        <div className="px-5 pb-5">{children}</div>
+        <div className="px-5 pb-5 flex-1">{children}</div>
       </div>
     </div>
   );
