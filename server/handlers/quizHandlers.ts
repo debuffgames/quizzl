@@ -116,10 +116,12 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
   io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.QUESTION, studentPayload);
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.QUESTION, fullPayload);
 
+  const initialCount = { answered: 0, total: session.participants.size };
   if (session.teacherSocketId) {
     io.to(session.teacherSocketId).emit(QUIZ_EVENTS.QUESTION, fullPayload);
-    io.to(session.teacherSocketId).emit(QUIZ_EVENTS.RESPONSE_COUNT, { answered: 0, total: session.participants.size });
+    io.to(session.teacherSocketId).emit(QUIZ_EVENTS.RESPONSE_COUNT, initialCount);
   }
+  io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.RESPONSE_COUNT, initialCount);
 
   // Auto-advance timer for BEAMER mode
   if (session.questionTimerEnd) {
