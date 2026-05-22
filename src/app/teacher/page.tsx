@@ -231,6 +231,9 @@ function TeacherContent() {
   const [bulkItems, setBulkItems] = useState<BulkItem[]>([]);
   const [bulkSaving, setBulkSaving] = useState(false);
 
+  // Visibility change
+  const [visConfirm, setVisConfirm] = useState<{ quizId: string; quizTitle: string; newVis: "PRIVATE" | "SCHOOL" | "PUBLIC" } | null>(null);
+
   // Quiz selection
   const [selectedQuiz, setSelectedQuiz] = useState<QuizSummary | null>(null);
   const [gameMode, setGameMode] = useState<GameMode>("AUTONOMOUS");
@@ -257,6 +260,25 @@ function TeacherContent() {
     setOwnQuizzes(Array.isArray(own) ? own : []);
     setPublicQuizzes(Array.isArray(pub) ? pub : []);
   }, []);
+
+  const applyVisibilityChange = async (quizId: string, newVis: "PRIVATE" | "SCHOOL" | "PUBLIC") => {
+    await fetch(`/api/quizzes/${quizId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visibility: newVis }),
+      credentials: "include",
+    });
+    setOwnQuizzes((prev) => prev.map((q) => q.id === quizId ? { ...q, visibility: newVis } : q));
+    setVisConfirm(null);
+  };
+
+  const handleVisibilityChange = (quizId: string, quizTitle: string, newVis: "PRIVATE" | "SCHOOL" | "PUBLIC") => {
+    if (newVis === "PUBLIC") {
+      setVisConfirm({ quizId, quizTitle, newVis });
+    } else {
+      applyVisibilityChange(quizId, newVis);
+    }
+  };
 
   // Auth + initial state detection
   // lobbyId is optional: when empty this is standalone (hub /quizzl page), no session check needed
@@ -595,9 +617,20 @@ function TeacherContent() {
             <div key={q.id} className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50">
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{q.title}</p>
-                <p className="text-xs text-gray-400">{q._count.questions} Fragen · {visLabel(q.visibility)}</p>
+                <p className="text-xs text-gray-400">{q._count.questions} Fragen</p>
               </div>
-              <div className="flex gap-2 shrink-0">
+              <div className="flex gap-2 shrink-0 items-center">
+                {listTab === "own" && (
+                  <select
+                    value={q.visibility}
+                    onChange={(e) => handleVisibilityChange(q.id, q.title, e.target.value as "PRIVATE" | "SCHOOL" | "PUBLIC")}
+                    className="text-xs border rounded px-1.5 py-1 text-gray-500 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white"
+                  >
+                    <option value="PRIVATE">Privat</option>
+                    <option value="SCHOOL">Meine Schule</option>
+                    <option value="PUBLIC">Öffentlich</option>
+                  </select>
+                )}
                 {listTab === "own" && (
                   <button onClick={() => openEditor(q.id)} className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 border rounded">
                     Bearbeiten
@@ -623,6 +656,36 @@ function TeacherContent() {
             </div>
           ))}
         </div>
+
+        {visConfirm && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-sm bg-white rounded-2xl shadow-xl p-5 space-y-4">
+              <div>
+                <p className="font-bold text-gray-900 text-base">Quizzl öffentlich machen?</p>
+                <p className="text-sm text-gray-500 mt-1 leading-snug">„{visConfirm.quizTitle}"</p>
+              </div>
+              <ul className="text-sm text-gray-600 space-y-1.5">
+                <li className="flex gap-2"><span className="text-amber-500 shrink-0">⚠</span> Das Quizzl ist für <strong>alle Lehrer</strong> auf der Plattform sichtbar und durchsuchbar.</li>
+                <li className="flex gap-2"><span className="text-amber-500 shrink-0">⚠</span> Andere Lehrer können es <strong>ansehen und als Kopie übernehmen</strong>.</li>
+                <li className="flex gap-2"><span className="text-gray-400 shrink-0">ℹ</span> Du kannst die Sichtbarkeit jederzeit wieder auf Privat zurückstellen.</li>
+              </ul>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setVisConfirm(null)}
+                  className="flex-1 py-2 border rounded-xl text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  Abbrechen
+                </button>
+                <button
+                  onClick={() => applyVisibilityChange(visConfirm.quizId, visConfirm.newVis)}
+                  className="flex-1 py-2 bg-indigo-600 text-white rounded-xl text-sm font-medium hover:bg-indigo-700"
+                >
+                  Ja, öffentlich machen
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </Layout>
     );
   }
@@ -1090,7 +1153,7 @@ function TeacherContent() {
 // ─── Shared layout ────────────────────────────────────────────────────────────
 
 function Layout({ children }: { children: React.ReactNode }) {
-  return <div className="flex flex-col h-screen max-h-screen bg-white text-gray-900 overflow-hidden">{children}</div>;
+  return <div className="relative flex flex-col h-screen max-h-screen bg-white text-gray-900 overflow-hidden">{children}</div>;
 }
 
 function Spinner() {
