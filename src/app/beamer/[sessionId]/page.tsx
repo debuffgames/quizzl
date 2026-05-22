@@ -12,6 +12,7 @@ interface AnswerData { id: string; text: string; sortOrder: number; }
 interface QuestionData {
   id: string; text: string; answerType: string;
   answers: AnswerData[]; timeLimitSecs: number | null; index: number; total: number;
+  explanation?: string | null;
 }
 interface TopScore { rank: number; displayName: string; score: number; }
 
@@ -214,6 +215,14 @@ function BeamerContent() {
           );
         })}
       </div>
+
+      {/* Explanation — shown after reveal */}
+      {isRevealed && question.explanation && (
+        <div className="w-full bg-white/10 rounded-2xl px-6 py-4 border border-white/20">
+          <p className="text-white/50 text-sm font-semibold uppercase tracking-wider mb-2">Erklärung</p>
+          <p className="text-white text-xl leading-snug">{question.explanation}</p>
+        </div>
+      )}
     </div>
   );
 }
