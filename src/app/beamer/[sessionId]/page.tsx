@@ -197,17 +197,18 @@ function BeamerContent() {
         {question.answers.map((a, i) => {
           const color = ANSWER_COLORS[i % ANSWER_COLORS.length];
           const isCorrect = correctIds.includes(a.id);
-          const dimmed = isRevealed && !isCorrect;
+          const wrong = isRevealed && !isCorrect;
           return (
             <div
               key={a.id}
               className={`relative flex flex-col items-center justify-center gap-3 p-6 rounded-2xl border-4 transition-all duration-500
-                ${color.bg} ${color.border} ${color.text}
-                ${dimmed ? "opacity-30 scale-95" : ""}
+                ${wrong
+                  ? "bg-gray-700 border-gray-600 text-gray-500 scale-95"
+                  : `${color.bg} ${color.border} ${color.text}`}
                 ${isCorrect && isRevealed ? "ring-4 ring-white scale-105" : ""}
               `}
             >
-              <span className="text-5xl">{color.shape}</span>
+              <span className={`text-5xl ${wrong ? "grayscale opacity-40" : ""}`}>{color.shape}</span>
               <span className="text-2xl font-bold text-center leading-tight">{a.text}</span>
               {isCorrect && isRevealed && (
                 <span className="absolute top-2 right-2 text-2xl">✓</span>
