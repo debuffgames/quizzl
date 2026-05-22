@@ -98,10 +98,11 @@ function BeamerContent() {
 
       socket.on(QUIZ_EVENTS.SCOREBOARD, ({ topN }: { topN: TopScore[] }) => {
         setTopScores(topN);
-        setPhase("scoreboard");
+        // Don't change phase — teacher controls flow; stay on revealed until next question
       });
 
       socket.on(QUIZ_EVENTS.END, ({ topScores: ts }: { topScores: TopScore[] }) => {
+        clearTimer();
         if (ts) setTopScores(ts);
         setPhase("scoreboard");
       });
