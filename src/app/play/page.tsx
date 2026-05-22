@@ -265,6 +265,13 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
     const nextIndex = qIndexRef.current + 1;
     if (nextIndex >= questions.length) {
       socket.emit(QUIZ_EVENTS.AUTONOMOUS_COMPLETE, { totalScore: scoreRef.current });
+      window.parent.postMessage({
+        type: "PROGRESS",
+        progress: 1,
+        score: scoreRef.current,
+        displayText: `Fertig · ${scoreRef.current} Pkt.`,
+        details: { "Status": "Fertig ✓", "Richtig": correctRef.current, "Falsch": wrongRef.current, "Punkte": scoreRef.current },
+      }, "*");
       window.parent.postMessage({ type: "COMPLETE", score: scoreRef.current }, "*");
       phaseRef.current = "ended";
       setPhase("ended");
