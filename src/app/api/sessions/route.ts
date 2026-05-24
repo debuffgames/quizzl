@@ -11,6 +11,9 @@ const CreateSessionSchema = z.object({
   quizId: z.string().cuid(),
   lobbyId: z.string(),
   gameMode: z.enum(["AUTONOMOUS", "BEAMER"]).default("AUTONOMOUS"),
+  beamerMode: z.enum(["STANDARD", "TEAM_SHIELD", "BOSS"]).default("STANDARD"),
+  speedMode: z.enum(["NORMAL", "BLITZ", "SUPER_BLITZ"]).default("NORMAL"),
+  bossTimerSeconds: z.number().int().min(60).max(3600).optional(),
 });
 
 // POST /api/sessions — creates a quiz session for a lobby
@@ -60,6 +63,9 @@ export async function POST(req: NextRequest) {
       lobbyId: parsed.data.lobbyId,
       teacherId,
       gameMode: parsed.data.gameMode,
+      beamerMode: parsed.data.beamerMode,
+      speedMode: parsed.data.speedMode,
+      bossTimerSeconds: parsed.data.bossTimerSeconds ?? null,
     },
   });
 

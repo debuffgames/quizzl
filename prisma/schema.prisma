@@ -71,6 +71,12 @@ model QuizSession {
   teacherId            String
   // "AUTONOMOUS" | "BEAMER"
   gameMode             String    @default("AUTONOMOUS")
+  // "STANDARD" | "TEAM_SHIELD" | "BOSS"
+  beamerMode           String    @default("STANDARD")
+  // "NORMAL" | "BLITZ" | "SUPER_BLITZ"
+  speedMode            String    @default("NORMAL")
+  // only for BOSS mode, e.g. 900
+  bossTimerSeconds     Int?
   // "WAITING" | "ACTIVE" | "PAUSED" | "ENDED"
   status               String    @default("WAITING")
   // -1 = not yet started

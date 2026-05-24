@@ -8,6 +8,7 @@ export const QUIZ_EVENTS = {
   NEXT_QUESTION: "quiz:nextQuestion",
   REVEAL_ANSWER: "quiz:revealAnswer",
   END_SESSION: "quiz:endSession",
+  SHOW_ANSWERS: "quiz:showAnswers",                // BLITZ: reveal answer tiles, start countdown
 
   // Beamer → Server
   BEAMER_JOIN: "quiz:beamerJoin",
@@ -21,6 +22,10 @@ export const QUIZ_EVENTS = {
   END: "quiz:end",
   PAUSE: "quiz:pause",
   RESUME: "quiz:resume",
+  ANSWERS_VISIBLE: "quiz:answersVisible",          // BLITZ/SUPER_BLITZ: answers now shown, countdown starts
+  TEAM_ASSIGNED: "quiz:teamAssigned",              // TEAM_SHIELD: which team student is on
+  BOSS_STATE: "quiz:bossState",                    // BOSS: {hp, maxHp, timerEnd, ability, wrongCount, threshold}
+  SHIELD_STATE: "quiz:shieldState",                // TEAM_SHIELD: {teams:[{name,hp,maxHp},…]}
 
   // Server → Teacher
   RESPONSE_COUNT: "quiz:responseCount",
@@ -28,3 +33,12 @@ export const QUIZ_EVENTS = {
   PLAYER_JOINED: "quiz:playerJoined",
   PLAYER_LEFT: "quiz:playerLeft",
 } as const;
+
+export type BossAbility =
+  | "NONE"
+  | "HIDDEN_ANSWER"
+  | "HALF_TIME"
+  | "MIRROR_TEXT"
+  | "MOVING_BUTTONS"
+  | "FLICKERING_BEAMER"
+  | "DANCING_BUZZERS";

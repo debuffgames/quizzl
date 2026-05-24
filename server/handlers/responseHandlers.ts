@@ -14,6 +14,7 @@ export function registerResponseHandlers(io: Server, socket: Socket, sessionMana
 
     participant.answeredCurrentQuestion = true;
     participant.currentAnswerIds = data.answerIds;
+    participant.answeredAt = Date.now();
 
     const count = sessionManager.getResponseCount(session);
     if (session.teacherSocketId) {

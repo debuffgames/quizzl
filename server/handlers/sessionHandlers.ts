@@ -33,6 +33,9 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
         teacherSocketId: null,
         beamerSocketId: null,
         gameMode: dbSession.gameMode as "AUTONOMOUS" | "BEAMER",
+        beamerMode: (dbSession.beamerMode ?? "STANDARD") as "STANDARD" | "TEAM_SHIELD" | "BOSS",
+        speedMode: (dbSession.speedMode ?? "NORMAL") as "NORMAL" | "BLITZ" | "SUPER_BLITZ",
+        bossTimerSeconds: dbSession.bossTimerSeconds ?? null,
         currentQuestionIndex: dbSession.currentQuestionIndex,
         questionTimerEnd: null,
       });
@@ -45,7 +48,9 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       score: 0,
       answeredCurrentQuestion: false,
       currentAnswerIds: [],
+      answeredAt: null,
       revealSent: false,
+      teamIndex: null,
       joinedAt: new Date(),
     });
 
@@ -69,7 +74,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
   });
 
   // Teacher joins to control the session
-  socket.on("quiz:teacherJoin", async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; sessionId?: string; gameMode?: string; error?: string }) => void) => {
+  socket.on("quiz:teacherJoin", async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; error?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "teacher") {
       ack?.({ ok: false, error: "Ungültiger Token" });
@@ -96,6 +101,9 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
         teacherSocketId: null,
         beamerSocketId: null,
         gameMode: dbSession.gameMode as "AUTONOMOUS" | "BEAMER",
+        beamerMode: (dbSession.beamerMode ?? "STANDARD") as "STANDARD" | "TEAM_SHIELD" | "BOSS",
+        speedMode: (dbSession.speedMode ?? "NORMAL") as "NORMAL" | "BLITZ" | "SUPER_BLITZ",
+        bossTimerSeconds: dbSession.bossTimerSeconds ?? null,
         currentQuestionIndex: dbSession.currentQuestionIndex,
         questionTimerEnd: null,
       });
@@ -105,7 +113,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(session.sessionId);
     socket.join(`${session.sessionId}:teacher`);
 
-    ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode });
+    ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode, beamerMode: session.beamerMode, speedMode: session.speedMode, bossTimerSeconds: session.bossTimerSeconds ?? undefined });
 
     // If session is already active, send the current question to the teacher
     if (session.currentQuestionIndex >= 0) {
@@ -114,7 +122,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
   });
 
   // Beamer joins
-  socket.on(QUIZ_EVENTS.BEAMER_JOIN, async (data: { sessionId: string; token: string }, ack?: (r: { ok: boolean; error?: string }) => void) => {
+  socket.on(QUIZ_EVENTS.BEAMER_JOIN, async (data: { sessionId: string; token: string }, ack?: (r: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "teacher") {
       ack?.({ ok: false, error: "Ungültiger Token" });
@@ -131,7 +139,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(session.sessionId);
     socket.join(`${session.sessionId}:beamer`);
 
-    ack?.({ ok: true });
+    ack?.({ ok: true, beamerMode: session.beamerMode, speedMode: session.speedMode });
   });
 }
 

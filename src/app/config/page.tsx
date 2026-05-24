@@ -10,6 +10,8 @@ interface QuizSummary {
 }
 
 type GameMode = "AUTONOMOUS" | "BEAMER";
+type BeamerMode = "STANDARD" | "TEAM_SHIELD" | "BOSS";
+type SpeedMode = "NORMAL" | "BLITZ" | "SUPER_BLITZ";
 
 export default function ConfigPage() {
   return <Suspense><ConfigContent /></Suspense>;
@@ -23,6 +25,10 @@ function ConfigContent() {
   const [loading, setLoading] = useState(true);
   const [quizId, setQuizId] = useState("");
   const [gameMode, setGameMode] = useState<GameMode>("AUTONOMOUS");
+  const [beamerMode, setBeamerMode] = useState<BeamerMode>("STANDARD");
+  const [speedMode, setSpeedMode] = useState<SpeedMode>("NORMAL");
+  const [bossTimerMinutes, setBossTimerMinutes] = useState(15);
+
   // Auth + load quizzes
   useEffect(() => {
     if (!token) { setLoading(false); return; }
@@ -44,32 +50,66 @@ function ConfigContent() {
   useEffect(() => {
     const handler = (e: MessageEvent) => {
       if (e.data?.type !== "CONFIG_INIT") return;
-      if (e.data.config?.quizId) setQuizId(e.data.config.quizId);
-      if (e.data.config?.gameMode === "BEAMER" || e.data.config?.gameMode === "AUTONOMOUS") {
-        setGameMode(e.data.config.gameMode);
-      }
+      const c = e.data.config ?? {};
+      if (c.quizId) setQuizId(c.quizId);
+      if (c.gameMode === "BEAMER" || c.gameMode === "AUTONOMOUS") setGameMode(c.gameMode);
+      if (["STANDARD", "TEAM_SHIELD", "BOSS"].includes(c.beamerMode)) setBeamerMode(c.beamerMode);
+      if (["NORMAL", "BLITZ", "SUPER_BLITZ"].includes(c.speedMode)) setSpeedMode(c.speedMode);
+      if (typeof c.bossTimerSeconds === "number") setBossTimerMinutes(Math.round(c.bossTimerSeconds / 60));
     };
     window.addEventListener("message", handler);
     return () => window.removeEventListener("message", handler);
   }, []);
 
-  const emit = useCallback((newQuizId: string, newMode: GameMode) => {
-    window.parent.postMessage({ type: "CONFIG_CHANGED", config: { quizId: newQuizId, gameMode: newMode } }, "*");
+  const emitConfig = useCallback((
+    qId: string, gm: GameMode, bm: BeamerMode, sm: SpeedMode, bossMin: number,
+  ) => {
+    window.parent.postMessage({
+      type: "CONFIG_CHANGED",
+      config: {
+        quizId: qId,
+        gameMode: gm,
+        beamerMode: bm,
+        speedMode: sm,
+        bossTimerSeconds: bossMin * 60,
+      },
+    }, "*");
   }, []);
 
   const handleQuizChange = (id: string) => {
     setQuizId(id);
-    emit(id, gameMode);
+    emitConfig(id, gameMode, beamerMode, speedMode, bossTimerMinutes);
   };
-
-  const handleModeChange = (m: GameMode) => {
+  const handleGameModeChange = (m: GameMode) => {
     setGameMode(m);
-    emit(quizId, m);
+    emitConfig(quizId, m, beamerMode, speedMode, bossTimerMinutes);
+  };
+  const handleBeamerModeChange = (m: BeamerMode) => {
+    setBeamerMode(m);
+    emitConfig(quizId, gameMode, m, speedMode, bossTimerMinutes);
+  };
+  const handleSpeedModeChange = (m: SpeedMode) => {
+    setSpeedMode(m);
+    emitConfig(quizId, gameMode, beamerMode, m, bossTimerMinutes);
+  };
+  const handleBossTimerChange = (min: number) => {
+    const clamped = Math.max(1, Math.min(60, min));
+    setBossTimerMinutes(clamped);
+    emitConfig(quizId, gameMode, beamerMode, speedMode, clamped);
   };
 
-  const openEditor = () => {
-    window.parent.postMessage({ type: "OPEN_EDITOR" }, "*");
-  };
+  const openEditor = () => window.parent.postMessage({ type: "OPEN_EDITOR" }, "*");
+
+  const BEAMER_MODES: { value: BeamerMode; label: string }[] = [
+    { value: "STANDARD", label: "Standard" },
+    { value: "TEAM_SHIELD", label: "Team-Schild" },
+    { value: "BOSS", label: "Bosskampf" },
+  ];
+  const SPEED_MODES: { value: SpeedMode; label: string; hint: string }[] = [
+    { value: "NORMAL", label: "Normal", hint: "Volle Punkte" },
+    { value: "BLITZ", label: "Blitz", hint: "Antworten erst nach Klick, Punkte sinken" },
+    { value: "SUPER_BLITZ", label: "Super Blitz", hint: "Punkte sinken sofort" },
+  ];
 
   return (
     <div className="flex flex-col gap-3 p-3 text-sm bg-white h-full">
@@ -101,7 +141,7 @@ function ConfigContent() {
           {(["AUTONOMOUS", "BEAMER"] as const).map((m) => (
             <button
               key={m}
-              onClick={() => handleModeChange(m)}
+              onClick={() => handleGameModeChange(m)}
               className={`flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
                 gameMode === m
                   ? "border-indigo-500 bg-indigo-50 text-indigo-700"
@@ -113,6 +153,67 @@ function ConfigContent() {
           ))}
         </div>
       </div>
+
+      {/* Beamer sub-mode (only when BEAMER selected) */}
+      {gameMode === "BEAMER" && (
+        <>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Modus</label>
+            <div className="flex gap-1.5">
+              {BEAMER_MODES.map((m) => (
+                <button
+                  key={m.value}
+                  onClick={() => handleBeamerModeChange(m.value)}
+                  className={`flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
+                    beamerMode === m.value
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                      : "border-gray-200 text-gray-500 hover:border-gray-400"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Geschwindigkeit</label>
+            <div className="flex gap-1.5">
+              {SPEED_MODES.map((m) => (
+                <button
+                  key={m.value}
+                  title={m.hint}
+                  onClick={() => handleSpeedModeChange(m.value)}
+                  className={`flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
+                    speedMode === m.value
+                      ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                      : "border-gray-200 text-gray-500 hover:border-gray-400"
+                  }`}
+                >
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Boss timer — only for Boss mode */}
+          {beamerMode === "BOSS" && (
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">
+                Bosskampf-Timer (Minuten)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={bossTimerMinutes}
+                onChange={(e) => handleBossTimerChange(Number(e.target.value))}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+            </div>
+          )}
+        </>
+      )}
 
       {/* Edit button */}
       <button

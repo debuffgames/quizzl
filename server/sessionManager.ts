@@ -1,5 +1,7 @@
 // In-memory session state — no PII persisted (DSGVO)
 
+import type { BossAbility } from "../src/lib/socket/events";
+
 export interface LiveParticipant {
   socketId: string;
   participantId: string;
@@ -7,7 +9,9 @@ export interface LiveParticipant {
   score: number;
   answeredCurrentQuestion: boolean;
   currentAnswerIds: string[];
-  revealSent: boolean;  // AUTONOMOUS: reveal already sent to this participant
+  answeredAt: number | null;          // epoch ms when SUBMIT_ANSWER received (for BLITZ scoring)
+  revealSent: boolean;                // AUTONOMOUS: reveal already sent to this participant
+  teamIndex: 0 | 1 | null;           // TEAM_SHIELD: which team (0=Grün, 1=Lila)
   joinedAt: Date;
 }
 
@@ -19,11 +23,29 @@ export interface LiveSession {
   teacherSocketId: string | null;
   beamerSocketId: string | null;
   gameMode: "AUTONOMOUS" | "BEAMER";
+  beamerMode: "STANDARD" | "TEAM_SHIELD" | "BOSS";
+  speedMode: "NORMAL" | "BLITZ" | "SUPER_BLITZ";
   currentQuestionIndex: number;
   questionTimerEnd: number | null;    // epoch ms, null if no timer
   questionTimerHandle: ReturnType<typeof setTimeout> | null;
   participants: Map<string, LiveParticipant>; // participantId → participant
   socketToParticipant: Map<string, string>;   // socketId → participantId
+
+  // BLITZ / SUPER_BLITZ: epoch ms when answers became visible; null = not yet (BLITZ) or NORMAL
+  answersVisibleAt: number | null;
+
+  // TEAM_SHIELD
+  teamShieldMax: number | null;
+  teamShields: [number, number] | null;  // [team0=Grün, team1=Lila]
+
+  // BOSS
+  bossMaxHp: number | null;
+  bossHp: number | null;
+  bossTimerSeconds: number | null;
+  bossTimerEnd: number | null;           // epoch ms; reduced by boss attacks
+  bossWrongCount: number | null;
+  currentBossAbility: BossAbility | null;
+  hiddenAnswerId: string | null;         // HIDDEN_ANSWER: ID of the answer hidden on beamer
 }
 
 export class SessionManager {
@@ -31,12 +53,21 @@ export class SessionManager {
   private lobbyToSession = new Map<string, string>();       // lobbyId → sessionId
   private socketToSession = new Map<string, string>();      // socketId → sessionId
 
-  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle">): LiveSession {
+  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId">): LiveSession {
     const live: LiveSession = {
       ...session,
       questionTimerHandle: null,
       participants: new Map(),
       socketToParticipant: new Map(),
+      answersVisibleAt: null,
+      teamShieldMax: null,
+      teamShields: null,
+      bossMaxHp: null,
+      bossHp: null,
+      bossTimerEnd: null,
+      bossWrongCount: null,
+      currentBossAbility: null,
+      hiddenAnswerId: null,
     };
     this.sessions.set(session.sessionId, live);
     this.lobbyToSession.set(session.lobbyId, session.sessionId);

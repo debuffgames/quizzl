@@ -30,6 +30,9 @@ interface BeamerQuestion {
   index: number;
   total: number;
   explanation?: string | null;
+  speedMode?: string;
+  answersVisibleAt?: number | null;
+  bossAbility?: string | null;
 }
 
 interface RevealData {
@@ -434,6 +437,9 @@ function BeamerPlay({ socket }: { socket: Socket }) {
   const [topScores, setTopScores] = useState<TopScore[]>([]);
   const [finalScore, setFinalScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [answersUnlocked, setAnswersUnlocked] = useState(true);
+  const [teamInfo, setTeamInfo] = useState<{ teamIndex: number; teamName: string } | null>(null);
+  const [dancing, setDancing] = useState(false);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalScoreRef = useRef(0);
@@ -462,6 +468,10 @@ function BeamerPlay({ socket }: { socket: Socket }) {
     setSelectedIds([]);
     setSubmitted(false);
     setReveal(null);
+    const isBlitz = data.speedMode === "BLITZ";
+    const visibleNow = data.answersVisibleAt !== null && data.answersVisibleAt !== undefined;
+    setAnswersUnlocked(!isBlitz || visibleNow);
+    setDancing(data.bossAbility === "DANCING_BUZZERS");
     setPhase("question");
     if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
     window.parent.postMessage({ type: "PROGRESS", progress: data.total > 0 ? data.index / data.total : 0, score: finalScoreRef.current }, "*");
@@ -490,6 +500,11 @@ function BeamerPlay({ socket }: { socket: Socket }) {
       setPhase("ended");
       window.parent.postMessage({ type: "COMPLETE", score: finalScoreRef.current }, "*");
     };
+    const onAnswersVisible = () => setAnswersUnlocked(true);
+    const onTeamAssigned = (data: { teamIndex: number; teamName: string }) => setTeamInfo(data);
+    const onBossState = (data: { ability?: string | null }) => {
+      setDancing(data.ability === "DANCING_BUZZERS");
+    };
     const onPause = () => {
       setPhase((p) => { prevPhaseRef.current = p; return "paused"; });
       clearTimer();
@@ -506,6 +521,9 @@ function BeamerPlay({ socket }: { socket: Socket }) {
     socket.on(QUIZ_EVENTS.END, onEnd);
     socket.on(QUIZ_EVENTS.PAUSE, onPause);
     socket.on(QUIZ_EVENTS.RESUME, onResume);
+    socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, onAnswersVisible);
+    socket.on(QUIZ_EVENTS.TEAM_ASSIGNED, onTeamAssigned);
+    socket.on(QUIZ_EVENTS.BOSS_STATE, onBossState);
     window.addEventListener("message", onMessage);
     return () => {
       socket.off(QUIZ_EVENTS.QUESTION, onQuestion);
@@ -515,12 +533,15 @@ function BeamerPlay({ socket }: { socket: Socket }) {
       socket.off(QUIZ_EVENTS.END, onEnd);
       socket.off(QUIZ_EVENTS.PAUSE, onPause);
       socket.off(QUIZ_EVENTS.RESUME, onResume);
+      socket.off(QUIZ_EVENTS.ANSWERS_VISIBLE, onAnswersVisible);
+      socket.off(QUIZ_EVENTS.TEAM_ASSIGNED, onTeamAssigned);
+      socket.off(QUIZ_EVENTS.BOSS_STATE, onBossState);
       window.removeEventListener("message", onMessage);
     };
   }, [socket, applyQuestion, clearTimer]);
 
   const toggleAnswer = (id: string) => {
-    if (submitted || !question) return;
+    if (submitted || !question || !answersUnlocked) return;
     if (question.answerType === "MULTIPLE_CHOICE") {
       setSelectedIds((prev) => prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]);
     } else {
@@ -625,12 +646,42 @@ function BeamerPlay({ socket }: { socket: Socket }) {
   const cardQ: CardQuestion = { text: question.text, index: question.index, total: question.total };
 
   return (
-    <GameCard question={cardQ} timeLeft={timeLeft}>
+    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo}>
       {phase === "answered" ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6">
           <Spinner />
           <p className="text-gray-400 text-xs">Antwort eingegangen...</p>
         </div>
+      ) : !answersUnlocked ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-8">
+          <span className="text-4xl">🔒</span>
+          <p className="text-gray-400 text-sm font-semibold">Warte auf den Lehrer...</p>
+        </div>
+      ) : dancing ? (
+        <>
+          <style>{`
+            @keyframes buzzDance0 { 0%,100%{transform:translate(0%,0%) rotate(0deg)} 25%{transform:translate(55%,20%) rotate(10deg)} 50%{transform:translate(5%,45%) rotate(-5deg)} 75%{transform:translate(-10%,10%) rotate(8deg)} }
+            @keyframes buzzDance1 { 0%,100%{transform:translate(110%,0%) rotate(0deg)} 25%{transform:translate(60%,35%) rotate(-8deg)} 50%{transform:translate(115%,50%) rotate(5deg)} 75%{transform:translate(140%,15%) rotate(-10deg)} }
+            @keyframes buzzDance2 { 0%,100%{transform:translate(0%,110%) rotate(0deg)} 25%{transform:translate(45%,80%) rotate(6deg)} 50%{transform:translate(-10%,130%) rotate(-8deg)} 75%{transform:translate(30%,100%) rotate(4deg)} }
+            @keyframes buzzDance3 { 0%,100%{transform:translate(110%,110%) rotate(0deg)} 25%{transform:translate(75%,130%) rotate(-5deg)} 50%{transform:translate(120%,85%) rotate(9deg)} 75%{transform:translate(90%,115%) rotate(-6deg)} }
+          `}</style>
+          <div className="relative w-full" style={{ height: "220px" }}>
+            {question.answers.map((a, idx) => {
+              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => toggleAnswer(a.id)}
+                  disabled={submitted}
+                  className={`absolute flex items-center justify-center rounded-2xl font-bold text-2xl shadow-lg active:scale-95 transition-none ${color.bg} ${color.text}`}
+                  style={{ width: "88px", height: "88px", animation: `buzzDance${idx} ${2.5 + idx * 0.4}s ease-in-out infinite`, animationDelay: `${idx * 0.3}s` }}
+                >
+                  {color.shape}
+                </button>
+              );
+            })}
+          </div>
+        </>
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {question.answers.map((a) => {
@@ -664,13 +715,22 @@ function BeamerPlay({ socket }: { socket: Socket }) {
 
 // ─── Shared layout components ─────────────────────────────────────────────────
 
-function GameCard({ children, question, timeLeft }: {
+function GameCard({ children, question, timeLeft, teamInfo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
+  teamInfo?: { teamIndex: number; teamName: string } | null;
 }) {
+  const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#8b5cf6";
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6">
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6" style={teamInfo ? { borderTop: `4px solid ${teamColor}` } : undefined}>
+      {teamInfo && (
+        <div className="w-full max-w-sm mb-2 flex justify-center">
+          <span className="text-xs font-bold px-3 py-1 rounded-full text-white" style={{ backgroundColor: teamColor }}>
+            {teamInfo.teamName}
+          </span>
+        </div>
+      )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
         {question && (
           <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">

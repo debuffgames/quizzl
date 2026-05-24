@@ -82,6 +82,9 @@ httpServer.on("request", (req: IncomingMessage, res: ServerResponse) => {
             teacherSocketId: null,
             beamerSocketId: null,
             gameMode: dbSession.gameMode as "AUTONOMOUS" | "BEAMER",
+            beamerMode: (dbSession.beamerMode ?? "STANDARD") as "STANDARD" | "TEAM_SHIELD" | "BOSS",
+            speedMode: (dbSession.speedMode ?? "NORMAL") as "NORMAL" | "BLITZ" | "SUPER_BLITZ",
+            bossTimerSeconds: dbSession.bossTimerSeconds ?? null,
             currentQuestionIndex: dbSession.currentQuestionIndex,
             questionTimerEnd: null,
           });

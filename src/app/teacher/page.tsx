@@ -40,6 +40,14 @@ interface AnswerDist { answerId: string; count: number; isCorrect: boolean; }
 interface TopScore { rank: number; displayName: string; score: number; }
 
 type GameMode = "AUTONOMOUS" | "BEAMER";
+type BeamerMode = "STANDARD" | "TEAM_SHIELD" | "BOSS";
+type SpeedMode = "NORMAL" | "BLITZ" | "SUPER_BLITZ";
+
+interface BossStateData {
+  hp: number; maxHp: number; timerEnd: number;
+  ability: string | null; wrongCount: number; threshold: number;
+}
+interface ShieldStateData { teams: { name: string; hp: number; maxHp: number }[] }
 
 const BEAMER_STYLES = [
   { bg: "bg-red-500",    text: "text-white",     symbol: "▲" },
@@ -248,6 +256,13 @@ function TeacherContent() {
   const [distribution, setDistribution] = useState<AnswerDist[] | null>(null);
   const [revealed, setRevealed] = useState(false);
   const [topScores, setTopScores] = useState<TopScore[]>([]);
+  // Sub-mode state (populated from teacherJoin ack)
+  const [beamerMode, setBeamerMode] = useState<BeamerMode>("STANDARD");
+  const [speedMode, setSpeedMode] = useState<SpeedMode>("NORMAL");
+  const [answersVisible, setAnswersVisible] = useState(false);
+  const [bossState, setBossState] = useState<BossStateData | null>(null);
+  const [shieldState, setShieldState] = useState<ShieldStateData | null>(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
 
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -329,9 +344,11 @@ function TeacherContent() {
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; error?: string }) => {
+      socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; error?: string }) => {
         if (!ack.ok) { setError(ack.error ?? "Socket-Verbindung fehlgeschlagen"); setPhase("error"); return; }
         if (ack.gameMode === "BEAMER" || ack.gameMode === "AUTONOMOUS") setGameMode(ack.gameMode);
+        if (ack.beamerMode === "TEAM_SHIELD" || ack.beamerMode === "BOSS") setBeamerMode(ack.beamerMode);
+        if (ack.speedMode === "BLITZ" || ack.speedMode === "SUPER_BLITZ") setSpeedMode(ack.speedMode);
         setPhase(initialPhase);
       });
     });
@@ -346,8 +363,13 @@ function TeacherContent() {
       setDistribution(null);
       setResponseCount({ answered: 0, total: participants.length });
       setRevealed(false);
+      setAnswersVisible(false);
       setPhase("active");
     });
+
+    socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, () => setAnswersVisible(true));
+    socket.on(QUIZ_EVENTS.BOSS_STATE, (data: BossStateData) => setBossState(data));
+    socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldStateData) => setShieldState(data));
 
     socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
     socket.on(QUIZ_EVENTS.ANSWER_DIST, ({ distribution: d }: { distribution: AnswerDist[] }) => { setDistribution(d); setRevealed(true); });
@@ -363,11 +385,19 @@ function TeacherContent() {
 
   const nextQuestion = () => socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
   const revealAnswer = () => socketRef.current?.emit(QUIZ_EVENTS.REVEAL_ANSWER);
+  const showAnswers = () => socketRef.current?.emit(QUIZ_EVENTS.SHOW_ANSWERS);
   const endSession = () => {
     if (confirm("Session wirklich beenden?")) {
       socketRef.current?.emit(QUIZ_EVENTS.END_SESSION);
     }
   };
+
+  // Boss timer tick
+  useEffect(() => {
+    if (beamerMode !== "BOSS" || !bossState) return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [beamerMode, bossState]);
 
   const openBeamer = () => {
     if (!sessionId) return;
@@ -1083,6 +1113,39 @@ function TeacherContent() {
             </div>
           )}
 
+          {/* Boss state panel */}
+          {beamerMode === "BOSS" && bossState && (
+            <div className="rounded-xl border border-orange-200 bg-orange-50 px-3 py-2.5 space-y-2">
+              <div className="flex items-center justify-between text-xs font-semibold text-orange-700">
+                <span>Boss-HP: {bossState.hp}/{bossState.maxHp}</span>
+                <span>⏱ {formatBossTimer(bossState.timerEnd - nowTick)}</span>
+              </div>
+              <div className="w-full bg-orange-200 rounded-full h-2">
+                <div className="bg-orange-500 h-2 rounded-full transition-all" style={{ width: `${Math.max(0, Math.round((bossState.hp / Math.max(bossState.maxHp, 1)) * 100))}%` }} />
+              </div>
+              {bossState.ability && bossState.ability !== "NONE" && (
+                <p className="text-xs text-orange-600 font-medium">Fähigkeit: {bossState.ability.replace(/_/g, " ")}</p>
+              )}
+              <p className="text-xs text-orange-500">Falsch: {bossState.wrongCount}/{bossState.threshold} bis Angriff</p>
+            </div>
+          )}
+
+          {/* Shield state panel */}
+          {beamerMode === "TEAM_SHIELD" && shieldState && (
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 space-y-1.5">
+              {shieldState.teams.map((t) => (
+                <div key={t.name}>
+                  <div className="flex items-center justify-between text-xs font-semibold mb-0.5" style={{ color: t.name === "Team Grün" ? "#15803d" : "#7c3aed" }}>
+                    <span>{t.name}</span><span>{t.hp}/{t.maxHp}</span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5">
+                    <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.max(0, Math.round((t.hp / Math.max(t.maxHp, 1)) * 100))}%`, backgroundColor: t.name === "Team Grün" ? "#22c55e" : "#8b5cf6" }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* Top scores after reveal */}
           {revealed && topScores.length > 0 && (
             <div>
@@ -1104,9 +1167,15 @@ function TeacherContent() {
           {gameMode === "BEAMER" ? (
             <>
               {!revealed ? (
-                <button onClick={revealAnswer} className="w-full py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 transition-colors">
-                  Antwort aufdecken
-                </button>
+                speedMode === "BLITZ" && !answersVisible ? (
+                  <button onClick={showAnswers} className="w-full py-2.5 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 transition-colors">
+                    Antworten zeigen
+                  </button>
+                ) : (
+                  <button onClick={revealAnswer} className="w-full py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 transition-colors">
+                    Antwort aufdecken
+                  </button>
+                )
               ) : (
                 <button onClick={nextQuestion} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
                   Nächste Frage →
@@ -1162,4 +1231,11 @@ function Spinner() {
 
 function visLabel(v: string) {
   return v === "PRIVATE" ? "Privat" : v === "SCHOOL" ? "Schule" : "Öffentlich";
+}
+
+function formatBossTimer(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
 }
