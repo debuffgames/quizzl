@@ -74,6 +74,14 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
 // ─── advanceToNextQuestion ────────────────────────────────────────────────────
 
 export async function advanceToNextQuestion(io: Server, session: LiveSession, sessionManager: SessionManager) {
+  // A win condition was deferred so the beamer animation could finish — resolve it now
+  if (session.pendingEnd) {
+    const pending = session.pendingEnd;
+    session.pendingEnd = null;
+    await endSessionWithResult(io, session, sessionManager, pending);
+    return;
+  }
+
   const quiz = await prisma.quiz.findUnique({
     where: { id: session.quizId },
     include: {
@@ -248,7 +256,9 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   const q = allQuestions[0];
   if (!q) return;
 
-  const correctIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
+  const allCorrectIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
+  // SINGLE_CHOICE / YES_NO: guard against bad data where multiple answers are marked correct
+  const correctIds = q.answerType === "MULTIPLE_CHOICE" ? allCorrectIds : allCorrectIds.slice(0, 1);
   let bossAttacked = false;
 
   for (const p of session.participants.values()) {
@@ -312,37 +322,46 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   if (session.beamerMode === "TEAM_SHIELD") sendShieldState(io, session);
   if (session.beamerMode === "BOSS") sendBossState(io, session);
 
-  // Win/loss conditions
+  // Win/loss conditions — defer END so the beamer animation plays before the scoreboard appears
   if (session.beamerMode === "TEAM_SHIELD" && session.teamShields) {
     const loserIdx = session.teamShields.findIndex((hp) => hp <= 0);
     if (loserIdx >= 0) {
       const winner = loserIdx === 0 ? "Team Lila" : "Team Grün";
-      await endSessionWithResult(io, session, sessionManager, {
+      session.pendingEnd = {
         winner, winType: "shield",
         shieldFinal: [
           { name: "Team Grün", hp: session.teamShields[0], maxHp: session.teamShieldMax ?? 1 },
           { name: "Team Lila", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
         ],
-      });
+      };
+      if (session.teacherSocketId) {
+        io.to(session.teacherSocketId).emit(QUIZ_EVENTS.PENDING_END);
+      }
       return;
     }
   }
 
   if (session.beamerMode === "BOSS") {
     if (session.bossHp !== null && session.bossHp <= 0) {
-      await endSessionWithResult(io, session, sessionManager, {
+      session.pendingEnd = {
         winner: "class", winType: "boss",
         bossTimeRemainingMs: Math.max(0, (session.bossTimerEnd ?? 0) - Date.now()),
         bossTotalMs: (session.bossTimerSeconds ?? 900) * 1000,
-      });
+      };
+      if (session.teacherSocketId) {
+        io.to(session.teacherSocketId).emit(QUIZ_EVENTS.PENDING_END);
+      }
       return;
     }
     if (session.bossTimerEnd !== null && Date.now() >= session.bossTimerEnd) {
-      await endSessionWithResult(io, session, sessionManager, {
+      session.pendingEnd = {
         winner: "boss", winType: "boss",
         bossHpRemaining: session.bossHp ?? 0,
         bossMaxHp: session.bossMaxHp ?? 0,
-      });
+      };
+      if (session.teacherSocketId) {
+        io.to(session.teacherSocketId).emit(QUIZ_EVENTS.PENDING_END);
+      }
       return;
     }
   }

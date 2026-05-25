@@ -439,7 +439,10 @@ function BeamerPlay({ socket }: { socket: Socket }) {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [answersUnlocked, setAnswersUnlocked] = useState(true);
   const [teamInfo, setTeamInfo] = useState<{ teamIndex: number; teamName: string } | null>(null);
+  const [myTeamHp, setMyTeamHp] = useState<{ hp: number; maxHp: number } | null>(null);
   const [dancing, setDancing] = useState(false);
+  const teamInfoRef = useRef<{ teamIndex: number; teamName: string } | null>(null);
+  useEffect(() => { teamInfoRef.current = teamInfo; }, [teamInfo]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalScoreRef = useRef(0);
@@ -502,6 +505,12 @@ function BeamerPlay({ socket }: { socket: Socket }) {
     };
     const onAnswersVisible = () => setAnswersUnlocked(true);
     const onTeamAssigned = (data: { teamIndex: number; teamName: string }) => setTeamInfo(data);
+    const onShieldState = (data: { teams: { name: string; hp: number; maxHp: number }[] }) => {
+      const ti = teamInfoRef.current;
+      if (ti === null) return;
+      const myTeam = data.teams[ti.teamIndex];
+      if (myTeam) setMyTeamHp({ hp: myTeam.hp, maxHp: myTeam.maxHp });
+    };
     const onBossState = (data: { ability?: string | null }) => {
       setDancing(data.ability === "DANCING_BUZZERS");
     };
@@ -523,6 +532,7 @@ function BeamerPlay({ socket }: { socket: Socket }) {
     socket.on(QUIZ_EVENTS.RESUME, onResume);
     socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, onAnswersVisible);
     socket.on(QUIZ_EVENTS.TEAM_ASSIGNED, onTeamAssigned);
+    socket.on(QUIZ_EVENTS.SHIELD_STATE, onShieldState);
     socket.on(QUIZ_EVENTS.BOSS_STATE, onBossState);
     window.addEventListener("message", onMessage);
     return () => {
@@ -535,6 +545,7 @@ function BeamerPlay({ socket }: { socket: Socket }) {
       socket.off(QUIZ_EVENTS.RESUME, onResume);
       socket.off(QUIZ_EVENTS.ANSWERS_VISIBLE, onAnswersVisible);
       socket.off(QUIZ_EVENTS.TEAM_ASSIGNED, onTeamAssigned);
+      socket.off(QUIZ_EVENTS.SHIELD_STATE, onShieldState);
       socket.off(QUIZ_EVENTS.BOSS_STATE, onBossState);
       window.removeEventListener("message", onMessage);
     };
@@ -646,7 +657,7 @@ function BeamerPlay({ socket }: { socket: Socket }) {
   const cardQ: CardQuestion = { text: question.text, index: question.index, total: question.total };
 
   return (
-    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo}>
+    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp}>
       {phase === "answered" ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6">
           <Spinner />
@@ -699,20 +710,31 @@ function BeamerPlay({ socket }: { socket: Socket }) {
 
 // ─── Shared layout components ─────────────────────────────────────────────────
 
-function GameCard({ children, question, timeLeft, teamInfo }: {
+function GameCard({ children, question, timeLeft, teamInfo, myTeamHp }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
   teamInfo?: { teamIndex: number; teamName: string } | null;
+  myTeamHp?: { hp: number; maxHp: number } | null;
 }) {
   const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#8b5cf6";
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6" style={teamInfo ? { borderTop: `4px solid ${teamColor}` } : undefined}>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6" style={teamInfo ? { borderTop: `6px solid ${teamColor}` } : undefined}>
       {teamInfo && (
-        <div className="w-full max-w-sm mb-2 flex justify-center">
-          <span className="text-xs font-bold px-3 py-1 rounded-full text-white" style={{ backgroundColor: teamColor }}>
+        <div className="w-full max-w-sm mb-3 flex flex-col items-center gap-1">
+          <span className="text-2xl font-black tracking-tight" style={{ color: teamColor }}>
             {teamInfo.teamName}
           </span>
+          {myTeamHp !== null && myTeamHp !== undefined && (
+            <div className="flex flex-col items-center gap-0.5 w-full">
+              <span className="text-sm font-bold" style={{ color: teamColor }}>
+                Schild: {myTeamHp.hp} / {myTeamHp.maxHp}
+              </span>
+              <div className="w-full max-w-[200px] h-2 rounded-full bg-gray-200 overflow-hidden">
+                <div className="h-2 rounded-full transition-all duration-500" style={{ width: `${Math.max(0, Math.round((myTeamHp.hp / Math.max(myTeamHp.maxHp, 1)) * 100))}%`, backgroundColor: teamColor }} />
+              </div>
+            </div>
+          )}
         </div>
       )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">

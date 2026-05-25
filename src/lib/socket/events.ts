@@ -32,6 +32,7 @@ export const QUIZ_EVENTS = {
   ANSWER_DIST: "quiz:answerDist",
   PLAYER_JOINED: "quiz:playerJoined",
   PLAYER_LEFT: "quiz:playerLeft",
+  PENDING_END: "quiz:pendingEnd",          // win condition reached — next teacher click shows end screen
 
   // Server → Beamer
   SESSION_STARTED: "quiz:sessionStarted",  // new session in same lobby — beamer should reset

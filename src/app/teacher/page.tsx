@@ -260,6 +260,7 @@ function TeacherContent() {
   const [beamerMode, setBeamerMode] = useState<BeamerMode>("STANDARD");
   const [speedMode, setSpeedMode] = useState<SpeedMode>("NORMAL");
   const [answersVisible, setAnswersVisible] = useState(false);
+  const [pendingEnd, setPendingEnd] = useState(false);
   const [bossState, setBossState] = useState<BossStateData | null>(null);
   const [shieldState, setShieldState] = useState<ShieldStateData | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
@@ -379,6 +380,7 @@ function TeacherContent() {
       if (ts) setTopScores(ts);
       setPhase("ended");
     });
+    socket.on(QUIZ_EVENTS.PENDING_END, () => setPendingEnd(true));
   }, [lobbyId, token, participants.length]);
 
   // ─── Actions ─────────────────────────────────────────────────────────────
@@ -1176,6 +1178,10 @@ function TeacherContent() {
                     Antwort aufdecken
                   </button>
                 )
+              ) : pendingEnd ? (
+                <button onClick={nextQuestion} className="w-full py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
+                  Ergebnis anzeigen →
+                </button>
               ) : (
                 <button onClick={nextQuestion} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
                   Nächste Frage →

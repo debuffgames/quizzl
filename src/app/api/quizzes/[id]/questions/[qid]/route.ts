@@ -32,6 +32,10 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const body = await req.json().catch(() => null);
   const parsed = UpdateQuestionSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  const effectiveType = parsed.data.answerType ?? question.answerType;
+  if (effectiveType !== "MULTIPLE_CHOICE" && parsed.data.answers && parsed.data.answers.filter((a) => a.isCorrect).length > 1) {
+    return NextResponse.json({ error: "Nur eine richtige Antwort erlaubt" }, { status: 400 });
+  }
 
   const { answers, ...questionData } = parsed.data;
 

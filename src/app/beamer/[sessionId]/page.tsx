@@ -653,11 +653,11 @@ function ShieldBattle({
       {/* Projectile */}
       {proj ? (
         <div
-          className="absolute top-1/2 left-1/2 flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
+          className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
           style={{ animation: `${proj.dir === 0 ? "fly-ltr" : "fly-rtl"} 800ms ease-in-out forwards` }}
         >
-          <span className="text-2xl">⚔️</span>
-          <span className="font-black text-white text-2xl">-{proj.damage}</span>
+          <span className="text-4xl">⚔️</span>
+          <span className="font-black text-white text-5xl">-{proj.damage}</span>
         </div>
       ) : (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/15 font-black text-3xl pointer-events-none select-none">VS</div>

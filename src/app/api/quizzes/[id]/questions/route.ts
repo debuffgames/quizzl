@@ -32,6 +32,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const body = await req.json().catch(() => null);
   const parsed = CreateQuestionSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  if (parsed.data.answerType !== "MULTIPLE_CHOICE" && parsed.data.answers.filter((a) => a.isCorrect).length > 1) {
+    return NextResponse.json({ error: "Nur eine richtige Antwort erlaubt" }, { status: 400 });
+  }
 
   const count = parsed.data.sortOrder ?? (await prisma.question.count({ where: { quizId } }));
 
