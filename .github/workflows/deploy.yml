@@ -7,7 +7,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_PREFIX: ghcr.io/ahessedenz
+  IMAGE_PREFIX: ghcr.io/debuffgames
 
 jobs:
   build-app:
