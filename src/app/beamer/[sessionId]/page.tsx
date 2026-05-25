@@ -62,9 +62,13 @@ function BeamerContent() {
   const [hiddenReveal, setHiddenReveal] = useState<{ id: string; text: string } | null>(null);
   const [bossResult, setBossResult] = useState<BossResult | null>(null);
   const [shieldResult, setShieldResult] = useState<ShieldResult | null>(null);
+  const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const prevShieldHpRef = useRef<[number, number] | null>(null);
+  const shieldStateRef = useRef<ShieldState | null>(null);
+  useEffect(() => { shieldStateRef.current = shieldState; }, [shieldState]);
 
   const clearTimer = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
@@ -138,6 +142,8 @@ function BeamerContent() {
         setResponseCount(null);
         setAnswersVisible(data.answersVisibleAt !== null && data.answersVisibleAt !== undefined);
         setHiddenReveal(null);
+        prevShieldHpRef.current = null;
+        setShieldAnimTrigger(null);
         if (data.speedMode) setSpeedMode(data.speedMode);
         setPhase("question");
         if (data.timeLimitSecs) startTimer(data.timeLimitSecs);
@@ -148,7 +154,15 @@ function BeamerContent() {
         resetForNewSession(data.beamerMode, data.speedMode);
       });
       socket.on(QUIZ_EVENTS.BOSS_STATE, (data: BossState) => { setBossState(data); setBeamerMode("BOSS"); });
-      socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldState) => { setShieldState(data); setBeamerMode("TEAM_SHIELD"); });
+      socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldState) => {
+        if (prevShieldHpRef.current) {
+          const preHp = prevShieldHpRef.current;
+          prevShieldHpRef.current = null;
+          setShieldAnimTrigger({ preHp, postHp: [data.teams[0].hp, data.teams[1].hp], key: Date.now() });
+        }
+        setShieldState(data);
+        setBeamerMode("TEAM_SHIELD");
+      });
 
       socket.on(QUIZ_EVENTS.TIMER_SYNC, ({ remainingSecs }: { remainingSecs: number }) => setTimeLeft(remainingSecs));
       socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
@@ -157,6 +171,10 @@ function BeamerContent() {
         clearTimer();
         setCorrectIds(correctAnswerIds);
         if (hr) setHiddenReveal(hr);
+        // Save shield HP before SHIELD_STATE arrives with updated values
+        if (shieldStateRef.current) {
+          prevShieldHpRef.current = [shieldStateRef.current.teams[0].hp, shieldStateRef.current.teams[1].hp];
+        }
         setPhase("revealed");
       });
 
@@ -386,7 +404,7 @@ function BeamerContent() {
                 style={{ width: `${Math.max(0, Math.round((bossState.hp / Math.max(bossState.maxHp, 1)) * 100))}%` }}
               />
             </div>
-            {ability && ability !== "NONE" && ability !== "DANCING_BUZZERS" ? (
+            {ability && ability !== "NONE" ? (
               <div className="mt-2 inline-flex items-center gap-1.5 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-2.5 py-1">
                 <span className="text-yellow-400 text-sm">⚡</span>
                 <span className="text-xs text-yellow-300 font-bold">{abilityLabel(ability)}</span>
@@ -404,21 +422,9 @@ function BeamerContent() {
         </div>
       )}
 
-      {/* Team shield overlay */}
+      {/* Team shield — large dominant display with attack animation */}
       {beamerMode === "TEAM_SHIELD" && shieldState && (
-        <div className="grid grid-cols-2 gap-3">
-          {shieldState.teams.map((t) => (
-            <div key={t.name} className="rounded-xl bg-black/40 px-3 py-2">
-              <div className="flex items-center justify-between text-sm font-bold mb-1" style={{ color: t.name === "Team Grün" ? "#22c55e" : "#8b5cf6" }}>
-                <span>{t.name}</span>
-                <span>{t.hp}/{t.maxHp}</span>
-              </div>
-              <div className="w-full bg-gray-700 rounded-full h-2.5">
-                <div className="h-2.5 rounded-full transition-all duration-500" style={{ width: `${Math.max(0, Math.round((t.hp / Math.max(t.maxHp, 1)) * 100))}%`, backgroundColor: t.name === "Team Grün" ? "#22c55e" : "#8b5cf6" }} />
-              </div>
-            </div>
-          ))}
-        </div>
+        <ShieldBattle teams={shieldState.teams} animTrigger={shieldAnimTrigger} />
       )}
 
       {/* Header row */}
@@ -531,6 +537,133 @@ function abilityLabel(ability: string): string {
     case "DANCING_BUZZERS": return "Tanz";
     default: return ability;
   }
+}
+
+const SHIELD_COLORS = ["#22c55e", "#8b5cf6"] as const;
+
+function ShieldBattle({
+  teams,
+  animTrigger,
+}: {
+  teams: ShieldTeam[];
+  animTrigger: { preHp: [number, number]; postHp: [number, number]; key: number } | null;
+}) {
+  const [overrideHp, setOverrideHp] = useState<[number, number] | null>(null);
+  const [proj, setProj] = useState<{ dir: 0 | 1; damage: number } | null>(null);
+  const [hitTeam, setHitTeam] = useState<0 | 1 | null>(null);
+
+  const displayHp: [number, number] = overrideHp ?? [teams[0]?.hp ?? 0, teams[1]?.hp ?? 0];
+
+  useEffect(() => {
+    if (!animTrigger) return;
+    const { preHp, postHp } = animTrigger;
+    const dmgTo1 = Math.max(0, preHp[1] - postHp[1]); // team0's correct answers → team1 takes this
+    const dmgTo0 = Math.max(0, preHp[0] - postHp[0]); // team1's correct answers → team0 takes this
+
+    setOverrideHp([...preHp]);
+    setProj(null);
+    setHitTeam(null);
+
+    const ids: ReturnType<typeof setTimeout>[] = [];
+    let t = 350;
+
+    if (dmgTo1 > 0) {
+      ids.push(setTimeout(() => setProj({ dir: 0, damage: dmgTo1 }), t));
+      t += 800;
+      ids.push(setTimeout(() => { setProj(null); setHitTeam(1); setOverrideHp([preHp[0], postHp[1]]); }, t));
+      t += 550;
+      ids.push(setTimeout(() => setHitTeam(null), t));
+      t += 350;
+    }
+
+    if (dmgTo0 > 0) {
+      ids.push(setTimeout(() => setProj({ dir: 1, damage: dmgTo0 }), t));
+      t += 800;
+      ids.push(setTimeout(() => { setProj(null); setHitTeam(0); setOverrideHp([postHp[0], postHp[1]]); }, t));
+      t += 550;
+      ids.push(setTimeout(() => { setHitTeam(null); setOverrideHp(null); }, t));
+    } else {
+      ids.push(setTimeout(() => setOverrideHp(null), t));
+    }
+
+    return () => ids.forEach(clearTimeout);
+  }, [animTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div className="relative flex rounded-2xl overflow-hidden" style={{ minHeight: 180, background: "rgba(0,0,0,0.35)" }}>
+      <style>{`
+        @keyframes fly-ltr {
+          0%   { transform: translate(-180px, -50%) scale(0.5); opacity: 0; }
+          12%  { transform: translate(-110px, -50%) scale(1);   opacity: 1; }
+          88%  { transform: translate( 110px, -50%) scale(1);   opacity: 1; }
+          100% { transform: translate( 180px, -50%) scale(0.5); opacity: 0; }
+        }
+        @keyframes fly-rtl {
+          0%   { transform: translate( 180px, -50%) scale(0.5); opacity: 0; }
+          12%  { transform: translate( 110px, -50%) scale(1);   opacity: 1; }
+          88%  { transform: translate(-110px, -50%) scale(1);   opacity: 1; }
+          100% { transform: translate(-180px, -50%) scale(0.5); opacity: 0; }
+        }
+        @keyframes shield-bash {
+          0%,100% { transform: translateX(0); }
+          20%     { transform: translateX(10px); }
+          40%     { transform: translateX(-8px); }
+          60%     { transform: translateX(5px); }
+          80%     { transform: translateX(-3px); }
+        }
+      `}</style>
+
+      {[0, 1].map((i) => {
+        const t = teams[i];
+        const color = SHIELD_COLORS[i];
+        const hp = displayHp[i];
+        const pct = Math.max(0, Math.round((hp / Math.max(t?.maxHp ?? 1, 1)) * 100));
+        const isHit = hitTeam === i;
+        return (
+          <div
+            key={i}
+            className="flex-1 flex flex-col items-center justify-center py-5 px-6 transition-[background,box-shadow] duration-200"
+            style={{
+              background: isHit ? `${color}35` : `${color}14`,
+              boxShadow: isHit ? `inset 0 0 50px ${color}50` : "none",
+              animation: isHit ? "shield-bash 0.45s ease-out" : "none",
+            }}
+          >
+            <p className="font-black text-base uppercase tracking-widest mb-1" style={{ color }}>{t?.name}</p>
+            <p
+              className="font-black tabular-nums leading-none"
+              style={{ color, fontSize: "5rem", textShadow: `0 0 40px ${color}90` }}
+            >
+              {hp}
+            </p>
+            <p className="text-white/25 text-xs mt-0.5">/ {t?.maxHp} HP</p>
+            <div className="w-full bg-gray-700/50 rounded-full mt-3" style={{ height: 10 }}>
+              <div
+                className="rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
+              />
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Center line */}
+      <div className="absolute inset-y-0 left-1/2 w-px bg-white/10 -translate-x-1/2 pointer-events-none" />
+
+      {/* Projectile */}
+      {proj ? (
+        <div
+          className="absolute top-1/2 left-1/2 flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
+          style={{ animation: `${proj.dir === 0 ? "fly-ltr" : "fly-rtl"} 800ms ease-in-out forwards` }}
+        >
+          <span className="text-2xl">⚔️</span>
+          <span className="font-black text-white text-2xl">-{proj.damage}</span>
+        </div>
+      ) : (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/15 font-black text-3xl pointer-events-none select-none">VS</div>
+      )}
+    </div>
+  );
 }
 
 function FullScreen({ children, bg }: { children?: React.ReactNode; bg: string }) {
