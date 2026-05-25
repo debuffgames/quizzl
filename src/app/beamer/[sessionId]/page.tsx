@@ -23,6 +23,17 @@ interface TopScore { rank: number; displayName: string; score: number; }
 interface BossState { hp: number; maxHp: number; timerEnd: number; ability: string | null; wrongCount: number; threshold: number; }
 interface ShieldTeam { name: string; hp: number; maxHp: number; }
 interface ShieldState { teams: ShieldTeam[]; }
+interface BossResult {
+  winner: "class" | "boss";
+  bossTimeRemainingMs?: number;
+  bossTotalMs?: number;
+  bossHpRemaining?: number;
+  bossMaxHp?: number;
+}
+interface ShieldResult {
+  winner: string;
+  shieldFinal: { name: string; hp: number; maxHp: number }[];
+}
 
 type Phase = "loading" | "error" | "waiting" | "question" | "revealed" | "scoreboard";
 
@@ -31,7 +42,7 @@ export default function BeamerPage() {
 }
 
 function BeamerContent() {
-  const { sessionId } = useParams<{ sessionId: string }>();
+  const { sessionId: lobbyId } = useParams<{ sessionId: string }>();
   const searchParams = useSearchParams();
   const token = searchParams.get("token") ?? "";
 
@@ -48,6 +59,9 @@ function BeamerContent() {
   const [bossState, setBossState] = useState<BossState | null>(null);
   const [shieldState, setShieldState] = useState<ShieldState | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [hiddenReveal, setHiddenReveal] = useState<{ id: string; text: string } | null>(null);
+  const [bossResult, setBossResult] = useState<BossResult | null>(null);
+  const [shieldResult, setShieldResult] = useState<ShieldResult | null>(null);
 
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -74,8 +88,25 @@ function BeamerContent() {
     return () => clearInterval(id);
   }, [beamerMode, bossState]);
 
+  const resetForNewSession = (bm?: string, sm?: string) => {
+    clearTimer();
+    setQuestion(null);
+    setCorrectIds([]);
+    setResponseCount(null);
+    setTimeLeft(null);
+    setAnswersVisible(false);
+    setBossState(null);
+    setShieldState(null);
+    setHiddenReveal(null);
+    setBossResult(null);
+    setShieldResult(null);
+    if (bm) setBeamerMode(bm);
+    if (sm) setSpeedMode(sm);
+    setPhase("waiting");
+  };
+
   useEffect(() => {
-    if (!sessionId || !token) { setError("Fehlende Parameter"); setPhase("error"); return; }
+    if (!lobbyId || !token) { setError("Fehlende Parameter"); setPhase("error"); return; }
 
     fetch("/api/auth/module-token", {
       method: "POST",
@@ -90,7 +121,7 @@ function BeamerContent() {
       socketRef.current = socket;
 
       socket.on("connect", () => {
-        socket.emit(QUIZ_EVENTS.BEAMER_JOIN, { sessionId, token }, (ack: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => {
+        socket.emit(QUIZ_EVENTS.BEAMER_JOIN, { lobbyId, token }, (ack: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => {
           if (!ack.ok) { setError(ack.error ?? "Verbindung fehlgeschlagen"); setPhase("error"); return; }
           if (ack.beamerMode) setBeamerMode(ack.beamerMode);
           if (ack.speedMode) setSpeedMode(ack.speedMode);
@@ -106,21 +137,26 @@ function BeamerContent() {
         setCorrectIds([]);
         setResponseCount(null);
         setAnswersVisible(data.answersVisibleAt !== null && data.answersVisibleAt !== undefined);
+        setHiddenReveal(null);
         if (data.speedMode) setSpeedMode(data.speedMode);
         setPhase("question");
         if (data.timeLimitSecs) startTimer(data.timeLimitSecs);
       });
 
       socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, () => setAnswersVisible(true));
+      socket.on(QUIZ_EVENTS.SESSION_STARTED, (data: { beamerMode?: string; speedMode?: string }) => {
+        resetForNewSession(data.beamerMode, data.speedMode);
+      });
       socket.on(QUIZ_EVENTS.BOSS_STATE, (data: BossState) => { setBossState(data); setBeamerMode("BOSS"); });
       socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldState) => { setShieldState(data); setBeamerMode("TEAM_SHIELD"); });
 
       socket.on(QUIZ_EVENTS.TIMER_SYNC, ({ remainingSecs }: { remainingSecs: number }) => setTimeLeft(remainingSecs));
       socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
 
-      socket.on(QUIZ_EVENTS.ANSWER_REVEAL, ({ correctAnswerIds }: { correctAnswerIds: string[] }) => {
+      socket.on(QUIZ_EVENTS.ANSWER_REVEAL, ({ correctAnswerIds, hiddenReveal: hr }: { correctAnswerIds: string[]; hiddenReveal?: { id: string; text: string } }) => {
         clearTimer();
         setCorrectIds(correctAnswerIds);
+        if (hr) setHiddenReveal(hr);
         setPhase("revealed");
       });
 
@@ -128,9 +164,21 @@ function BeamerContent() {
         setTopScores(topN);
       });
 
-      socket.on(QUIZ_EVENTS.END, ({ topScores: ts }: { topScores: TopScore[] }) => {
+      socket.on(QUIZ_EVENTS.END, (data: { topScores: TopScore[]; winType?: string; winner?: string; bossTimeRemainingMs?: number; bossTotalMs?: number; bossHpRemaining?: number; bossMaxHp?: number; shieldFinal?: { name: string; hp: number; maxHp: number }[] }) => {
         clearTimer();
-        if (ts) setTopScores(ts);
+        if (data.topScores) setTopScores(data.topScores);
+        if (data.winType === "boss") {
+          setBossResult({
+            winner: data.winner as "class" | "boss",
+            bossTimeRemainingMs: data.bossTimeRemainingMs,
+            bossTotalMs: data.bossTotalMs,
+            bossHpRemaining: data.bossHpRemaining,
+            bossMaxHp: data.bossMaxHp,
+          });
+        }
+        if (data.winType === "shield" && data.winner && data.shieldFinal) {
+          setShieldResult({ winner: data.winner, shieldFinal: data.shieldFinal });
+        }
         setPhase("scoreboard");
       });
     });
@@ -139,7 +187,7 @@ function BeamerContent() {
       clearTimer();
       socketRef.current?.disconnect();
     };
-  }, [sessionId, token]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [lobbyId, token]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -160,6 +208,105 @@ function BeamerContent() {
   }
 
   if (phase === "scoreboard") {
+    if (bossResult) {
+      const classWon = bossResult.winner === "class";
+      const timeUsedMs = (bossResult.bossTotalMs ?? 0) - (bossResult.bossTimeRemainingMs ?? 0);
+      return (
+        <div className={`flex flex-col min-h-screen ${classWon ? "bg-gray-900" : "bg-gray-950"} text-white p-8 gap-8`}>
+          {/* Hero */}
+          <div className="flex flex-col items-center gap-4 pt-4">
+            <p className="text-8xl">{classWon ? "⚔️" : "💀"}</p>
+            <h1 className={`text-6xl font-black text-center leading-tight ${classWon ? "text-yellow-400" : "text-red-500"}`}>
+              {classWon ? "BOSS BESIEGT!" : "DER BOSS\nTRIUMPHIERT"}
+            </h1>
+            <p className="text-xl text-white/60 text-center mt-1">
+              {classWon
+                ? "Die Klasse hat zusammengekämpft und gewonnen!"
+                : "Der Boss war diesmal zu mächtig... Beim nächsten Mal!"}
+            </p>
+            {/* Stats */}
+            {classWon && bossResult.bossTotalMs != null && (
+              <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-2xl px-8 py-4 text-center mt-2">
+                <p className="text-yellow-300/70 text-sm font-semibold uppercase tracking-wider mb-1">Gebrauchte Zeit</p>
+                <p className="text-yellow-300 text-3xl font-black tabular-nums">
+                  {formatTimer(timeUsedMs)}
+                  <span className="text-lg text-yellow-300/50 font-normal"> / {formatTimer(bossResult.bossTotalMs)}</span>
+                </p>
+                {bossResult.bossTimeRemainingMs != null && (
+                  <p className="text-yellow-300/60 text-sm mt-1">{formatTimer(bossResult.bossTimeRemainingMs)} Restzeit übrig</p>
+                )}
+              </div>
+            )}
+            {!classWon && bossResult.bossMaxHp != null && (
+              <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-8 py-4 text-center mt-2 w-full max-w-sm">
+                <p className="text-red-300/70 text-sm font-semibold uppercase tracking-wider mb-2">Boss-HP beim Sieg</p>
+                <div className="w-full bg-gray-700 rounded-full h-4 mb-2">
+                  <div className="bg-red-500 h-4 rounded-full" style={{ width: `${Math.round(((bossResult.bossHpRemaining ?? 0) / Math.max(bossResult.bossMaxHp, 1)) * 100)}%` }} />
+                </div>
+                <p className="text-red-300 text-2xl font-black">{bossResult.bossHpRemaining} <span className="text-red-300/50 font-normal text-lg">/ {bossResult.bossMaxHp} HP</span></p>
+              </div>
+            )}
+          </div>
+          {/* Scoreboard */}
+          <div className="flex flex-col items-center gap-3 w-full max-w-lg mx-auto">
+            <p className="text-white/40 text-sm font-semibold uppercase tracking-wider">Bestenliste</p>
+            {topScores.map((s) => (
+              <div key={s.rank} className={`flex items-center gap-4 px-6 py-3 rounded-2xl w-full ${s.rank === 1 ? "bg-yellow-400 text-gray-900" : s.rank === 2 ? "bg-gray-300 text-gray-900" : s.rank === 3 ? "bg-amber-600 text-white" : "bg-white/10 text-white"}`}>
+                <span className="text-xl font-bold w-8 text-center">{s.rank}.</span>
+                <span className="flex-1 text-xl font-semibold">{s.displayName}</span>
+                <span className="text-xl font-bold">{s.score}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    if (shieldResult) {
+      const winnerColor = shieldResult.winner === "Team Grün" ? "#22c55e" : "#8b5cf6";
+      return (
+        <div className="flex flex-col min-h-screen bg-gray-900 text-white p-8 gap-8">
+          {/* Hero */}
+          <div className="flex flex-col items-center gap-4 pt-4">
+            <p className="text-8xl">🛡️</p>
+            <h1 className="text-6xl font-black text-center" style={{ color: winnerColor }}>
+              {shieldResult.winner.toUpperCase()}
+            </h1>
+            <p className="text-2xl font-bold text-white/70">hat gewonnen!</p>
+            {/* Shield bars */}
+            <div className="w-full max-w-md mt-4 space-y-4">
+              {shieldResult.shieldFinal.map((t) => {
+                const color = t.name === "Team Grün" ? "#22c55e" : "#8b5cf6";
+                const isWinner = t.name === shieldResult.winner;
+                return (
+                  <div key={t.name} className={`rounded-2xl px-5 py-4 ${isWinner ? "bg-white/10" : "bg-white/5"}`} style={isWinner ? { outline: `2px solid ${color}` } : undefined}>
+                    <div className="flex items-center justify-between mb-2" style={{ color }}>
+                      <span className="font-bold text-lg">{t.name} {isWinner ? "🏆" : ""}</span>
+                      <span className="font-black text-xl tabular-nums">{t.hp} <span className="text-sm font-normal opacity-60">/ {t.maxHp}</span></span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-3">
+                      <div className="h-3 rounded-full transition-all" style={{ width: `${Math.max(0, Math.round((t.hp / Math.max(t.maxHp, 1)) * 100))}%`, backgroundColor: color }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Scoreboard */}
+          <div className="flex flex-col items-center gap-3 w-full max-w-lg mx-auto">
+            <p className="text-white/40 text-sm font-semibold uppercase tracking-wider">Bestenliste</p>
+            {topScores.map((s) => (
+              <div key={s.rank} className={`flex items-center gap-4 px-6 py-3 rounded-2xl w-full ${s.rank === 1 ? "bg-yellow-400 text-gray-900" : s.rank === 2 ? "bg-gray-300 text-gray-900" : s.rank === 3 ? "bg-amber-600 text-white" : "bg-white/10 text-white"}`}>
+                <span className="text-xl font-bold w-8 text-center">{s.rank}.</span>
+                <span className="flex-1 text-xl font-semibold">{s.displayName}</span>
+                <span className="text-xl font-bold">{s.score}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <FullScreen bg="bg-gray-900">
         <h2 className="text-white text-4xl font-bold mb-8">🏆 Ergebnisse</h2>
@@ -192,11 +339,30 @@ function BeamerContent() {
 
   return (
     <div className="flex flex-col min-h-screen bg-gray-900 text-white gap-4 p-6 relative overflow-hidden">
-      {/* Flickering beamer effect */}
+      {/* Flickering beamer effect — each button has its own independent pattern */}
       {ability === "FLICKERING_BEAMER" && !isRevealed && (
         <style>{`
-          @keyframes flicker { 0%,100%{opacity:1} 10%{opacity:0.4} 20%{opacity:1} 50%{opacity:0.6} 60%{opacity:1} 80%{opacity:0.7} 90%{opacity:1} }
-          .flicker-ability { animation: flicker 1.8s infinite; }
+          @keyframes flicker0 {
+            0%{opacity:1} 5%{opacity:.3} 8%{opacity:1} 13%{opacity:.5} 16%{opacity:1}
+            35%{opacity:1} 37%{opacity:0} 70%{opacity:0} 73%{opacity:.7} 76%{opacity:0} 80%{opacity:1}
+            100%{opacity:1}
+          }
+          @keyframes flicker1 {
+            0%{opacity:1} 18%{opacity:1} 20%{opacity:0} 56%{opacity:0} 59%{opacity:.6} 62%{opacity:.1}
+            65%{opacity:1} 75%{opacity:1} 77%{opacity:0} 85%{opacity:0} 88%{opacity:1}
+            100%{opacity:1}
+          }
+          @keyframes flicker2 {
+            0%{opacity:1} 5%{opacity:0} 30%{opacity:0} 33%{opacity:.8} 37%{opacity:1}
+            60%{opacity:1} 62%{opacity:0} 90%{opacity:0} 93%{opacity:.4} 96%{opacity:0}
+            100%{opacity:1}
+          }
+          @keyframes flicker3 {
+            0%{opacity:.7} 3%{opacity:.1} 7%{opacity:1} 11%{opacity:.4} 15%{opacity:1}
+            25%{opacity:1} 27%{opacity:0} 58%{opacity:0} 61%{opacity:1}
+            80%{opacity:1} 82%{opacity:0} 91%{opacity:0} 93%{opacity:1}
+            100%{opacity:1}
+          }
         `}</style>
       )}
       {ability === "MOVING_BUTTONS" && !isRevealed && (
@@ -220,6 +386,14 @@ function BeamerContent() {
                 style={{ width: `${Math.max(0, Math.round((bossState.hp / Math.max(bossState.maxHp, 1)) * 100))}%` }}
               />
             </div>
+            {ability && ability !== "NONE" && ability !== "DANCING_BUZZERS" ? (
+              <div className="mt-2 inline-flex items-center gap-1.5 bg-yellow-500/20 border border-yellow-500/40 rounded-lg px-2.5 py-1">
+                <span className="text-yellow-400 text-sm">⚡</span>
+                <span className="text-xs text-yellow-300 font-bold">{abilityLabel(ability)}</span>
+              </div>
+            ) : (
+              <div className="mt-2 h-[26px]" />
+            )}
           </div>
           <div className="text-center min-w-[80px]">
             <p className="text-xs text-white/50 mb-0.5">Zeit</p>
@@ -227,12 +401,6 @@ function BeamerContent() {
               {formatTimer(Math.max(0, bossState.timerEnd - nowTick))}
             </p>
           </div>
-          {ability && ability !== "NONE" && ability !== "DANCING_BUZZERS" && (
-            <div className="bg-yellow-500/20 border border-yellow-500/40 rounded-xl px-3 py-1.5 text-center min-w-[100px]">
-              <p className="text-[10px] text-yellow-300/70 uppercase font-semibold">Fähigkeit</p>
-              <p className="text-xs text-yellow-300 font-bold">{abilityLabel(ability)}</p>
-            </div>
-          )}
         </div>
       )}
 
@@ -305,20 +473,25 @@ function BeamerContent() {
                     ? "bg-gray-700 border-gray-600 text-gray-500 scale-95"
                     : `${color.bg} ${color.border} ${color.text}`}
                   ${isCorrect && isRevealed ? "ring-4 ring-white scale-105" : ""}
-                  ${ability === "FLICKERING_BEAMER" && !isRevealed ? "flicker-ability" : ""}
                   ${ability === "MOVING_BUTTONS" && !isRevealed ? "wobble-ability" : ""}
                 `}
-                style={{ animationDelay: ability === "MOVING_BUTTONS" ? `${i * 0.15}s` : undefined }}
+                style={
+                  ability === "FLICKERING_BEAMER" && !isRevealed
+                    ? { animation: `flicker${i % 4} ${[3.5, 5.0, 4.2, 6.0][i % 4]}s ${[0, 1.2, 2.5, 0.7][i % 4]}s infinite` }
+                    : ability === "MOVING_BUTTONS" && !isRevealed
+                    ? { animationDelay: `${i * 0.15}s` }
+                    : undefined
+                }
               >
                 <span className={`text-5xl ${wrong ? "grayscale opacity-40" : ""}`}>{color.shape}</span>
-                {isHidden ? (
+                {isHidden && !isRevealed ? (
                   <span className="text-3xl font-bold">?</span>
                 ) : (
                   <span
                     className="text-2xl font-bold text-center leading-tight"
                     style={isMirror ? { transform: "scaleX(-1)", display: "inline-block" } : undefined}
                   >
-                    {a.text}
+                    {isHidden && isRevealed ? hiddenReveal?.text ?? a.text : a.text}
                   </span>
                 )}
                 {isCorrect && isRevealed && (

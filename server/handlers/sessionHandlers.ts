@@ -3,6 +3,7 @@ import { prisma } from "../../src/lib/db/prisma";
 import { verifyModuleToken } from "../../src/lib/auth/moduleToken";
 import { QUIZ_EVENTS } from "../../src/lib/socket/events";
 import type { SessionManager } from "../sessionManager";
+import { sendBossState, sendShieldState } from "./quizHandlers";
 
 const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
 
@@ -121,17 +122,21 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     }
   });
 
-  // Beamer joins
-  socket.on(QUIZ_EVENTS.BEAMER_JOIN, async (data: { sessionId: string; token: string }, ack?: (r: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => void) => {
+  // Beamer joins (persistent — survives across sessions in the same lobby)
+  socket.on(QUIZ_EVENTS.BEAMER_JOIN, async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "teacher") {
       ack?.({ ok: false, error: "Ungültiger Token" });
       return;
     }
 
-    const session = sessionManager.getById(data.sessionId);
+    // Register beamer for this lobby — persists across sessions
+    sessionManager.setLobbyBeamerSocket(data.lobbyId, socket.id);
+
+    const session = sessionManager.getByLobby(data.lobbyId);
     if (!session) {
-      ack?.({ ok: false, error: "Session nicht gefunden" });
+      // No active session yet — park and wait for SESSION_STARTED
+      ack?.({ ok: true });
       return;
     }
 
@@ -140,6 +145,12 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(`${session.sessionId}:beamer`);
 
     ack?.({ ok: true, beamerMode: session.beamerMode, speedMode: session.speedMode });
+
+    if (session.currentQuestionIndex >= 0) {
+      await sendCurrentQuestion(io, socket.id, session, sessionManager);
+      if (session.beamerMode === "BOSS") sendBossState(io, session);
+      if (session.beamerMode === "TEAM_SHIELD") sendShieldState(io, session);
+    }
   });
 }
 

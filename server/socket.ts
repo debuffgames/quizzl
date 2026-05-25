@@ -116,6 +116,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     console.log(`[Socket] Client disconnected: ${socket.id}`);
     sessionManager.removeParticipant(socket.id);
+    sessionManager.removeBeamerSocket(socket.id);
   });
 });
 

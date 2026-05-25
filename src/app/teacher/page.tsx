@@ -400,8 +400,8 @@ function TeacherContent() {
   }, [beamerMode, bossState]);
 
   const openBeamer = () => {
-    if (!sessionId) return;
-    window.open(`/beamer/${sessionId}?token=${encodeURIComponent(token)}`, "_blank");
+    if (!lobbyId) return;
+    window.open(`/beamer/${lobbyId}?token=${encodeURIComponent(token)}`, "_blank");
   };
 
   // ─── Quiz Editor ─────────────────────────────────────────────────────────

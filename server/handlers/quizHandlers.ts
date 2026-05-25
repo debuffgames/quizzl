@@ -114,6 +114,21 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
       const avgPoints = quiz.questions.reduce((s, q) => s + q.points, 0) / quiz.questions.length;
       initBoss(session, quiz.questions, avgPoints);
     }
+
+    // Reconnect persistent beamer if one is waiting for this lobby
+    const beamerSocketId = sessionManager.getLobbyBeamerSocket(session.lobbyId);
+    if (beamerSocketId) {
+      const beamerSocket = io.sockets.sockets.get(beamerSocketId);
+      if (beamerSocket) {
+        beamerSocket.join(session.sessionId);
+        beamerSocket.join(`${session.sessionId}:beamer`);
+        sessionManager.setBeamerSocket(session.sessionId, beamerSocketId);
+        beamerSocket.emit(QUIZ_EVENTS.SESSION_STARTED, {
+          beamerMode: session.beamerMode,
+          speedMode: session.speedMode,
+        });
+      }
+    }
   }
 
   const question = quiz.questions[nextIndex];
@@ -285,7 +300,10 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   if (session.teacherSocketId) {
     io.to(session.teacherSocketId).emit(QUIZ_EVENTS.ANSWER_DIST, { distribution: dist });
   }
-  io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds });
+  const hiddenReveal = session.hiddenAnswerId
+    ? (() => { const a = q.answers.find((a) => a.id === session.hiddenAnswerId); return a ? { id: a.id, text: a.text } : undefined; })()
+    : undefined;
+  io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, hiddenReveal });
 
   const topScores = sessionManager.getTopScores(session, 10);
   io.to(session.sessionId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
@@ -299,18 +317,32 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
     const loserIdx = session.teamShields.findIndex((hp) => hp <= 0);
     if (loserIdx >= 0) {
       const winner = loserIdx === 0 ? "Team Lila" : "Team Grün";
-      await endSessionWithResult(io, session, sessionManager, { winner, winType: "shield" });
+      await endSessionWithResult(io, session, sessionManager, {
+        winner, winType: "shield",
+        shieldFinal: [
+          { name: "Team Grün", hp: session.teamShields[0], maxHp: session.teamShieldMax ?? 1 },
+          { name: "Team Lila", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
+        ],
+      });
       return;
     }
   }
 
   if (session.beamerMode === "BOSS") {
     if (session.bossHp !== null && session.bossHp <= 0) {
-      await endSessionWithResult(io, session, sessionManager, { winner: "class", winType: "boss" });
+      await endSessionWithResult(io, session, sessionManager, {
+        winner: "class", winType: "boss",
+        bossTimeRemainingMs: Math.max(0, (session.bossTimerEnd ?? 0) - Date.now()),
+        bossTotalMs: (session.bossTimerSeconds ?? 900) * 1000,
+      });
       return;
     }
     if (session.bossTimerEnd !== null && Date.now() >= session.bossTimerEnd) {
-      await endSessionWithResult(io, session, sessionManager, { winner: "boss", winType: "boss" });
+      await endSessionWithResult(io, session, sessionManager, {
+        winner: "boss", winType: "boss",
+        bossHpRemaining: session.bossHp ?? 0,
+        bossMaxHp: session.bossMaxHp ?? 0,
+      });
       return;
     }
   }
@@ -342,7 +374,7 @@ function applyBossWrongAnswer(session: LiveSession): boolean {
   return false;
 }
 
-function sendBossState(io: Server, session: LiveSession) {
+export function sendBossState(io: Server, session: LiveSession) {
   const state = {
     hp: session.bossHp,
     maxHp: session.bossMaxHp,
@@ -357,7 +389,7 @@ function sendBossState(io: Server, session: LiveSession) {
   }
 }
 
-function sendShieldState(io: Server, session: LiveSession) {
+export function sendShieldState(io: Server, session: LiveSession) {
   const state = {
     teams: [
       { name: "Team Grün", hp: session.teamShields?.[0] ?? 0, maxHp: session.teamShieldMax ?? 1 },
@@ -410,7 +442,7 @@ function initBoss(
 function pickBossAbility(answerType: string): BossAbility {
   const pool: BossAbility[] = [
     "NONE", "NONE",
-    "HALF_TIME", "MIRROR_TEXT", "MOVING_BUTTONS", "FLICKERING_BEAMER", "DANCING_BUZZERS",
+    "HALF_TIME", "MIRROR_TEXT", /* "MOVING_BUTTONS", */ "FLICKERING_BEAMER", "DANCING_BUZZERS",
     ...(answerType === "SINGLE_CHOICE" ? (["HIDDEN_ANSWER"] as BossAbility[]) : []),
   ];
   return pool[Math.floor(Math.random() * pool.length)];

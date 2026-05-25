@@ -659,28 +659,12 @@ function BeamerPlay({ socket }: { socket: Socket }) {
         </div>
       ) : dancing ? (
         <>
-          <style>{`
-            @keyframes buzzDance0 { 0%,100%{transform:translate(0%,0%) rotate(0deg)} 25%{transform:translate(55%,20%) rotate(10deg)} 50%{transform:translate(5%,45%) rotate(-5deg)} 75%{transform:translate(-10%,10%) rotate(8deg)} }
-            @keyframes buzzDance1 { 0%,100%{transform:translate(110%,0%) rotate(0deg)} 25%{transform:translate(60%,35%) rotate(-8deg)} 50%{transform:translate(115%,50%) rotate(5deg)} 75%{transform:translate(140%,15%) rotate(-10deg)} }
-            @keyframes buzzDance2 { 0%,100%{transform:translate(0%,110%) rotate(0deg)} 25%{transform:translate(45%,80%) rotate(6deg)} 50%{transform:translate(-10%,130%) rotate(-8deg)} 75%{transform:translate(30%,100%) rotate(4deg)} }
-            @keyframes buzzDance3 { 0%,100%{transform:translate(110%,110%) rotate(0deg)} 25%{transform:translate(75%,130%) rotate(-5deg)} 50%{transform:translate(120%,85%) rotate(9deg)} 75%{transform:translate(90%,115%) rotate(-6deg)} }
-          `}</style>
-          <div className="relative w-full" style={{ height: "220px" }}>
-            {question.answers.map((a, idx) => {
-              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
-              return (
-                <button
-                  key={a.id}
-                  onClick={() => toggleAnswer(a.id)}
-                  disabled={submitted}
-                  className={`absolute flex items-center justify-center rounded-2xl font-bold text-2xl shadow-lg active:scale-95 transition-none ${color.bg} ${color.text}`}
-                  style={{ width: "88px", height: "88px", animation: `buzzDance${idx} ${2.5 + idx * 0.4}s ease-in-out infinite`, animationDelay: `${idx * 0.3}s` }}
-                >
-                  {color.shape}
-                </button>
-              );
-            })}
-          </div>
+          <DancingBuzzers answers={question.answers} onAnswer={toggleAnswer} submitted={submitted} selectedIds={selectedIds} />
+          {question.answerType === "MULTIPLE_CHOICE" && selectedIds.length > 0 && (
+            <button onClick={submitMultiple} className="mt-3 w-full py-3 bg-[#02512c] text-white font-bold text-sm rounded-xl active:scale-95 transition-transform">
+              Antworten abgeben ({selectedIds.length})
+            </button>
+          )}
         </>
       ) : (
         <div className="grid grid-cols-2 gap-3">
@@ -766,6 +750,84 @@ function Shell({ children }: { children: React.ReactNode }) {
       <div className="w-full max-w-sm text-center flex flex-col items-center">
         {children}
       </div>
+    </div>
+  );
+}
+
+const DANCING_BUTTON_SIZE = 88;
+
+function DancingBuzzers({
+  answers,
+  onAnswer,
+  submitted,
+  selectedIds = [],
+}: {
+  answers: BeamerQuestion["answers"];
+  onAnswer: (id: string) => void;
+  submitted: boolean;
+  selectedIds?: string[];
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [positions, setPositions] = useState<Array<{ x: number; y: number }>>(() =>
+    answers.map((_, i) => ({ x: i * 20, y: i * 20 }))
+  );
+  const [durations, setDurations] = useState<number[]>(() => answers.map(() => 0.7));
+
+  useEffect(() => {
+    const el = containerRef.current;
+    const getPos = () => {
+      const w = el ? el.offsetWidth : 300;
+      const h = el ? el.offsetHeight : 260;
+      return {
+        x: Math.random() * Math.max(0, w - DANCING_BUTTON_SIZE),
+        y: Math.random() * Math.max(0, h - DANCING_BUTTON_SIZE),
+      };
+    };
+
+    const ids: ReturnType<typeof setTimeout>[] = [];
+
+    const schedule = (idx: number): ReturnType<typeof setTimeout> =>
+      setTimeout(
+        () => {
+          setPositions((prev) => { const n = [...prev]; n[idx] = getPos(); return n; });
+          setDurations((prev) => { const n = [...prev]; n[idx] = 0.3 + Math.random() * 0.9; return n; });
+          ids[idx] = schedule(idx);
+        },
+        350 + Math.random() * 950,
+      );
+
+    setPositions(answers.map(() => getPos()));
+    answers.forEach((_, idx) => {
+      ids[idx] = setTimeout(() => { ids[idx] = schedule(idx); }, idx * 120 + Math.random() * 200);
+    });
+
+    return () => ids.forEach((id) => clearTimeout(id));
+  }, [answers.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div ref={containerRef} className="relative w-full" style={{ height: "260px" }}>
+      {answers.map((a, idx) => {
+        const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+        const pos = positions[idx] ?? { x: 0, y: 0 };
+        const dur = durations[idx] ?? 0.7;
+        return (
+          <button
+            key={a.id}
+            onClick={() => onAnswer(a.id)}
+            disabled={submitted}
+            className={`absolute flex items-center justify-center rounded-2xl font-bold text-2xl shadow-lg active:scale-95 ${color.bg} ${color.text} ${selectedIds.includes(a.id) ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-90" : ""}`}
+            style={{
+              width: `${DANCING_BUTTON_SIZE}px`,
+              height: `${DANCING_BUTTON_SIZE}px`,
+              left: `${pos.x}px`,
+              top: `${pos.y}px`,
+              transition: `left ${dur}s cubic-bezier(0.25,0.46,0.45,0.94), top ${dur}s cubic-bezier(0.34,1.56,0.64,1)`,
+            }}
+          >
+            {color.shape}
+          </button>
+        );
+      })}
     </div>
   );
 }

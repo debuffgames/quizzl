@@ -52,6 +52,8 @@ export class SessionManager {
   private sessions = new Map<string, LiveSession>();        // sessionId → session
   private lobbyToSession = new Map<string, string>();       // lobbyId → sessionId
   private socketToSession = new Map<string, string>();      // socketId → sessionId
+  private lobbyBeamerSockets = new Map<string, string>();   // lobbyId → beamer socketId (persists across sessions)
+  private beamerSocketToLobby = new Map<string, string>();  // beamer socketId → lobbyId (for cleanup)
 
   createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId">): LiveSession {
     const live: LiveSession = {
@@ -136,6 +138,25 @@ export class SessionManager {
     }
   }
 
+  setLobbyBeamerSocket(lobbyId: string, socketId: string): void {
+    const prev = this.lobbyBeamerSockets.get(lobbyId);
+    if (prev) this.beamerSocketToLobby.delete(prev);
+    this.lobbyBeamerSockets.set(lobbyId, socketId);
+    this.beamerSocketToLobby.set(socketId, lobbyId);
+  }
+
+  getLobbyBeamerSocket(lobbyId: string): string | null {
+    return this.lobbyBeamerSockets.get(lobbyId) ?? null;
+  }
+
+  removeBeamerSocket(socketId: string): void {
+    const lobbyId = this.beamerSocketToLobby.get(socketId);
+    if (lobbyId) {
+      this.lobbyBeamerSockets.delete(lobbyId);
+      this.beamerSocketToLobby.delete(socketId);
+    }
+  }
+
   endSession(sessionId: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
@@ -145,6 +166,7 @@ export class SessionManager {
     }
     if (session.teacherSocketId) this.socketToSession.delete(session.teacherSocketId);
     if (session.beamerSocketId) this.socketToSession.delete(session.beamerSocketId);
+    // lobbyBeamerSockets intentionally NOT cleared — beamer persists across sessions
     this.sessions.delete(sessionId);
   }
 
