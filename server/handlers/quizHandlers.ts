@@ -5,7 +5,7 @@ import type { SessionManager, LiveSession, LiveParticipant } from "../sessionMan
 
 export function registerQuizHandlers(io: Server, socket: Socket, sessionManager: SessionManager) {
   socket.on(QUIZ_EVENTS.NEXT_QUESTION, async () => {
-    const sessionId = getTeacherSession(socket, sessionManager);
+    const sessionId = getControllerSession(socket, sessionManager);
     if (!sessionId) return;
     const session = sessionManager.getById(sessionId);
     if (!session) return;
@@ -14,7 +14,7 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
   });
 
   socket.on(QUIZ_EVENTS.REVEAL_ANSWER, async () => {
-    const sessionId = getTeacherSession(socket, sessionManager);
+    const sessionId = getControllerSession(socket, sessionManager);
     if (!sessionId) return;
     const session = sessionManager.getById(sessionId);
     if (!session) return;
@@ -26,9 +26,9 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     await revealAnswer(io, session, sessionManager);
   });
 
-  // BLITZ: teacher reveals answer tiles and starts countdown
+  // BLITZ: teacher/beamer reveals answer tiles and starts countdown
   socket.on(QUIZ_EVENTS.SHOW_ANSWERS, () => {
-    const sessionId = getTeacherSession(socket, sessionManager);
+    const sessionId = getControllerSession(socket, sessionManager);
     if (!sessionId) return;
     const session = sessionManager.getById(sessionId);
     if (!session) return;
@@ -486,6 +486,15 @@ function getTeacherSession(socket: Socket, sessionManager: SessionManager): stri
   for (const room of socket.rooms) {
     const session = sessionManager.getById(room);
     if (session && session.teacherSocketId === socket.id) return room;
+  }
+  return null;
+}
+
+// Accepts commands from either the teacher socket or the beamer socket
+function getControllerSession(socket: Socket, sessionManager: SessionManager): string | null {
+  for (const room of socket.rooms) {
+    const session = sessionManager.getById(room);
+    if (session && (session.teacherSocketId === socket.id || session.beamerSocketId === socket.id)) return room;
   }
   return null;
 }

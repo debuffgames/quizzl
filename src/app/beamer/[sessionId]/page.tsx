@@ -70,6 +70,14 @@ function BeamerContent() {
   const shieldStateRef = useRef<ShieldState | null>(null);
   useEffect(() => { shieldStateRef.current = shieldState; }, [shieldState]);
 
+  // Refs so the keyboard handler always reads current state without stale closures
+  const phaseRef = useRef(phase);
+  const speedModeRef = useRef(speedMode);
+  const answersVisibleRef = useRef(answersVisible);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { speedModeRef.current = speedMode; }, [speedMode]);
+  useEffect(() => { answersVisibleRef.current = answersVisible; }, [answersVisible]);
+
   const clearTimer = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
   };
@@ -206,6 +214,30 @@ function BeamerContent() {
       socketRef.current?.disconnect();
     };
   }, [lobbyId, token]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.key !== " " && e.key !== "Enter" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const socket = socketRef.current;
+      if (!socket) return;
+      const p = phaseRef.current;
+      const sm = speedModeRef.current;
+      const av = answersVisibleRef.current;
+      if (p === "question") {
+        if (sm === "BLITZ" && !av) {
+          socket.emit(QUIZ_EVENTS.SHOW_ANSWERS);
+        } else {
+          socket.emit(QUIZ_EVENTS.REVEAL_ANSWER);
+        }
+      } else if (p === "revealed") {
+        socket.emit(QUIZ_EVENTS.NEXT_QUESTION);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Render ───────────────────────────────────────────────────────────────
 
@@ -516,6 +548,14 @@ function BeamerContent() {
           <p className="text-white text-xl leading-snug">{question.explanation}</p>
         </div>
       )}
+
+      {/* Keyboard shortcut hint */}
+      <div className="absolute bottom-4 right-5 flex items-center gap-1.5 opacity-20 hover:opacity-60 transition-opacity pointer-events-none select-none">
+        <kbd className="bg-white/20 border border-white/30 rounded px-2 py-0.5 text-xs font-mono text-white">Leertaste</kbd>
+        <span className="text-white/70 text-xs">
+          {isRevealed ? "→ Nächste Frage" : speedMode === "BLITZ" && !answersVisible ? "→ Antworten zeigen" : "→ Auflösen"}
+        </span>
+      </div>
     </div>
   );
 }
