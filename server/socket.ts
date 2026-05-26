@@ -7,9 +7,14 @@ import { sessionManager } from "./sessionManager";
 import { QUIZ_EVENTS } from "../src/lib/socket/events";
 import { prisma } from "../src/lib/db/prisma";
 
+if (!process.env.QUIZZL_MODULE_SECRET) {
+  console.error("[Quizzl] FATAL: QUIZZL_MODULE_SECRET environment variable is not set. Refusing to start.");
+  process.exit(1);
+}
+
 const HUB_ORIGIN = process.env.HUB_ORIGIN ?? "http://localhost:3000";
 const PORT = parseInt(process.env.SOCKET_PORT ?? "4001", 10);
-const INTERNAL_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
+const INTERNAL_SECRET = process.env.QUIZZL_MODULE_SECRET;
 
 const httpServer = createServer();
 
@@ -115,7 +120,12 @@ io.on("connection", (socket) => {
 
   socket.on("disconnect", () => {
     console.log(`[Socket] Client disconnected: ${socket.id}`);
-    sessionManager.removeParticipant(socket.id);
+    const removed = sessionManager.removeParticipant(socket.id);
+    if (removed?.session.teacherSocketId) {
+      io.to(removed.session.teacherSocketId).emit(QUIZ_EVENTS.PLAYER_LEFT, {
+        participantId: removed.participant.participantId,
+      });
+    }
     sessionManager.removeBeamerSocket(socket.id);
   });
 });

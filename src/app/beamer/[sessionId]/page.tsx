@@ -64,6 +64,8 @@ function BeamerContent() {
   const [shieldResult, setShieldResult] = useState<ShieldResult | null>(null);
   const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
 
+  const [reconnecting, setReconnecting] = useState(false);
+
   const socketRef = useRef<Socket | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevShieldHpRef = useRef<[number, number] | null>(null);
@@ -133,6 +135,7 @@ function BeamerContent() {
       socketRef.current = socket;
 
       socket.on("connect", () => {
+        setReconnecting(false);
         socket.emit(QUIZ_EVENTS.BEAMER_JOIN, { lobbyId, token }, (ack: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => {
           if (!ack.ok) { setError(ack.error ?? "Verbindung fehlgeschlagen"); setPhase("error"); return; }
           if (ack.beamerMode) setBeamerMode(ack.beamerMode);
@@ -141,7 +144,7 @@ function BeamerContent() {
         });
       });
 
-      socket.on("connect_error", () => { setError("Verbindung fehlgeschlagen"); setPhase("error"); });
+      socket.on("disconnect", () => setReconnecting(true));
 
       socket.on(QUIZ_EVENTS.QUESTION, (data: QuestionData) => {
         clearTimer();
@@ -240,6 +243,15 @@ function BeamerContent() {
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── Render ───────────────────────────────────────────────────────────────
+
+  if (reconnecting) {
+    return (
+      <FullScreen bg="bg-gray-900">
+        <div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin mb-4" />
+        <p className="text-white/60 text-xl">Verbindung unterbrochen – wird neu verbunden…</p>
+      </FullScreen>
+    );
+  }
 
   if (phase === "loading") {
     return <FullScreen bg="bg-gray-900"><div className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full animate-spin" /></FullScreen>;

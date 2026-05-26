@@ -295,6 +295,8 @@ function TeacherContent() {
   const [shieldState, setShieldState] = useState<ShieldStateData | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
+  const [socketConnected, setSocketConnected] = useState(true);
+
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
@@ -395,6 +397,7 @@ function TeacherContent() {
     socketRef.current = socket;
 
     socket.on("connect", () => {
+      setSocketConnected(true);
       socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; error?: string }) => {
         if (!ack.ok) { setError(ack.error ?? "Socket-Verbindung fehlgeschlagen"); setPhase("error"); return; }
         if (ack.gameMode === "BEAMER" || ack.gameMode === "AUTONOMOUS") setGameMode(ack.gameMode);
@@ -404,7 +407,7 @@ function TeacherContent() {
       });
     });
 
-    socket.on("connect_error", () => { setError("Verbindung zum Server fehlgeschlagen"); setPhase("error"); });
+    socket.on("disconnect", () => setSocketConnected(false));
 
     socket.on(QUIZ_EVENTS.PLAYER_JOINED, (p: Participant) => setParticipants((prev) => [...prev.filter((x) => x.participantId !== p.participantId), p]));
     socket.on(QUIZ_EVENTS.PLAYER_LEFT, ({ participantId }: { participantId: string }) => setParticipants((prev) => prev.filter((x) => x.participantId !== participantId)));
@@ -1066,7 +1069,7 @@ function TeacherContent() {
   // ── LOBBY (WAITING ROOM) ──
   if (phase === "lobby") {
     return (
-      <Layout>
+      <Layout reconnecting={!socketConnected}>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <h1 className="font-bold">{selectedQuiz?.title}</h1>
@@ -1106,7 +1109,7 @@ function TeacherContent() {
   if (phase === "active") {
     const maxCount = distribution ? Math.max(...distribution.map((d) => d.count), 1) : 1;
     return (
-      <Layout>
+      <Layout reconnecting={!socketConnected}>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <p className="text-xs text-gray-400">
@@ -1462,8 +1465,18 @@ function TeacherContent() {
 
 // ─── Shared layout ────────────────────────────────────────────────────────────
 
-function Layout({ children }: { children: React.ReactNode }) {
-  return <div className="relative flex flex-col h-screen max-h-screen bg-white text-gray-900 overflow-hidden">{children}</div>;
+function Layout({ children, reconnecting }: { children: React.ReactNode; reconnecting?: boolean }) {
+  return (
+    <div className="relative flex flex-col h-screen max-h-screen bg-white text-gray-900 overflow-hidden">
+      {reconnecting && (
+        <div className="absolute top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-amber-500 py-1.5 text-xs font-semibold text-white">
+          <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+          Verbindung unterbrochen – wird neu verbunden…
+        </div>
+      )}
+      {children}
+    </div>
+  );
 }
 
 function Spinner() {

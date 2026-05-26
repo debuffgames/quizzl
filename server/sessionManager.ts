@@ -106,6 +106,18 @@ export class SessionManager {
   addParticipant(sessionId: string, participant: LiveParticipant): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
+
+    const existing = session.participants.get(participant.participantId);
+    if (existing) {
+      // Reconnect: update only socket references, preserve score/history/team
+      this.socketToSession.delete(existing.socketId);
+      session.socketToParticipant.delete(existing.socketId);
+      existing.socketId = participant.socketId;
+      session.socketToParticipant.set(participant.socketId, participant.participantId);
+      this.socketToSession.set(participant.socketId, sessionId);
+      return;
+    }
+
     session.participants.set(participant.participantId, participant);
     session.socketToParticipant.set(participant.socketId, participant.participantId);
     this.socketToSession.set(participant.socketId, sessionId);

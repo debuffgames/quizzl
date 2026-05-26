@@ -74,7 +74,9 @@ function PlayContent() {
   const token = searchParams.get("token") ?? "";
 
   const [init, setInit] = useState<Init>({ status: "loading" });
+  const [reconnecting, setReconnecting] = useState(false);
   const startTimeRef = useRef(Date.now());
+  const hasJoinedRef = useRef(false);
 
   useEffect(() => {
     if (!lobbyId || !token) { setInit({ status: "error", message: "Fehlende Parameter" }); return; }
@@ -98,13 +100,21 @@ function PlayContent() {
       const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin;
       socket = io(socketUrl, { withCredentials: true });
 
-      socket.on("connect_error", () => {
-        setInit({ status: "error", message: "Verbindung zum Server fehlgeschlagen" });
+      socket.on("disconnect", () => {
+        if (hasJoinedRef.current) setReconnecting(true);
       });
 
       socket.on("connect", () => {
+        setReconnecting(false);
         socket.emit(QUIZ_EVENTS.JOIN, { lobbyId, token }, async (ack: { ok: boolean; gameMode?: string; error?: string }) => {
-          if (!ack.ok) { setInit({ status: "error", message: ack.error ?? "Beitreten fehlgeschlagen" }); return; }
+          if (!ack.ok) {
+            if (!hasJoinedRef.current) setInit({ status: "error", message: ack.error ?? "Beitreten fehlgeschlagen" });
+            return;
+          }
+
+          const isReconnect = hasJoinedRef.current;
+          hasJoinedRef.current = true;
+          if (isReconnect) return;
 
           const mode = (ack.gameMode as "AUTONOMOUS" | "BEAMER") ?? "AUTONOMOUS";
           window.parent.postMessage({ type: "READY" }, "*");
@@ -144,15 +154,15 @@ function PlayContent() {
   );
 
   if (init.status === "autonomous") {
-    return <AutonomousPlay questions={init.questions} socket={init.socket} />;
+    return <AutonomousPlay questions={init.questions} socket={init.socket} reconnecting={reconnecting} />;
   }
 
-  return <BeamerPlay socket={init.socket} />;
+  return <BeamerPlay socket={init.socket} reconnecting={reconnecting} />;
 }
 
 // ─── AUTONOMOUS mode — fully client-side ──────────────────────────────────────
 
-function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; socket: Socket }) {
+function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQuestion[]; socket: Socket; reconnecting: boolean }) {
   const [qIndex, setQIndex] = useState(0);
   const [phase, setPhase] = useState<"question" | "revealed" | "ended">("question");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -406,39 +416,46 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
   }
 
   return (
-    <GameCard question={cardQ} timeLeft={timeLeft}>
-      <div className="flex flex-col gap-2.5">
-        <div className="grid grid-cols-2 gap-2.5">
-          {q.answers.map((a) => {
-            const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
-            const isSelected = selectedIds.includes(a.id);
-            return (
-              <button
-                key={a.id}
-                onClick={() => toggleAnswer(a.id)}
-                className={`flex items-center justify-center px-3 py-4 rounded-2xl font-semibold transition-all active:scale-95 text-center text-sm leading-tight
-                  ${color.bg} ${color.text}
-                  ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
-                `}
-              >
-                {a.text}
-              </button>
-            );
-          })}
+    <>
+      {reconnecting && (
+        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-white text-xs font-semibold text-center py-1.5 px-4">
+          Verbindung unterbrochen – wird neu verbunden…
         </div>
-        {hasSelection && (
-          <button onClick={submitAnswer} className="w-full py-3 bg-[#02512c] text-white font-bold text-sm rounded-xl active:scale-95 transition-transform">
-            {isMultiple ? `Antworten abgeben (${selectedIds.length})` : "Antwort einloggen"}
-          </button>
-        )}
-      </div>
-    </GameCard>
+      )}
+      <GameCard question={cardQ} timeLeft={timeLeft}>
+        <div className="flex flex-col gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            {q.answers.map((a) => {
+              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+              const isSelected = selectedIds.includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => toggleAnswer(a.id)}
+                  className={`flex items-center justify-center px-3 py-4 rounded-2xl font-semibold transition-all active:scale-95 text-center text-sm leading-tight
+                    ${color.bg} ${color.text}
+                    ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
+                  `}
+                >
+                  {a.text}
+                </button>
+              );
+            })}
+          </div>
+          {hasSelection && (
+            <button onClick={submitAnswer} className="w-full py-3 bg-[#02512c] text-white font-bold text-sm rounded-xl active:scale-95 transition-transform">
+              {isMultiple ? `Antworten abgeben (${selectedIds.length})` : "Antwort einloggen"}
+            </button>
+          )}
+        </div>
+      </GameCard>
+    </>
   );
 }
 
 // ─── BEAMER mode — server-controlled ──────────────────────────────────────────
 
-function BeamerPlay({ socket }: { socket: Socket }) {
+function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: boolean }) {
   type BeamerPhase = "waiting" | "question" | "answered" | "revealed" | "scoreboard" | "ended" | "paused";
   const [phase, setPhase] = useState<BeamerPhase>("waiting");
   const [question, setQuestion] = useState<BeamerQuestion | null>(null);
@@ -582,6 +599,13 @@ function BeamerPlay({ socket }: { socket: Socket }) {
   };
 
   // ─── Screens ───────────────────────────────────────────────────────────────
+
+  if (reconnecting) return (
+    <Shell>
+      <div className="w-10 h-10 border-4 border-gray-300 border-t-gray-600 rounded-full animate-spin mb-4" />
+      <p className="text-gray-500 text-sm font-semibold">Verbindung unterbrochen – wird neu verbunden…</p>
+    </Shell>
+  );
 
   if (phase === "paused") return (
     <Shell><div className="text-5xl mb-3">⏸</div><p className="text-gray-600 text-xl font-bold">Pause</p></Shell>

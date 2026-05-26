@@ -513,6 +513,10 @@ async function endSessionWithResult(
   sessionManager: SessionManager,
   extra: Record<string, unknown>,
 ) {
+  if (session.questionTimerHandle) {
+    clearTimeout(session.questionTimerHandle);
+    session.questionTimerHandle = null;
+  }
   const topScores = sessionManager.getTopScores(session, 10);
   io.to(session.sessionId).emit(QUIZ_EVENTS.END, { topScores, ...extra });
   await prisma.quizSession.update({

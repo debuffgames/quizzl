@@ -30,6 +30,11 @@ export async function GET(
     return NextResponse.json({ error: "Session nicht gefunden" }, { status: 404 });
   }
 
+  // AUTONOMOUS mode uses client-side evaluation: the full question data including
+  // isCorrect is sent to the student's browser. A motivated student could read the
+  // correct answers from DevTools. This is an intentional trade-off — it avoids a
+  // network round-trip per question and enables offline play. Kahoot and similar tools
+  // make the same choice. Do not use Quizzl for high-stakes exams.
   return NextResponse.json({
     gameMode: quizSession.gameMode,
     questions: quizSession.quiz.questions.map((q) => ({

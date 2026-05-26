@@ -49,25 +49,32 @@ export async function POST(req: NextRequest) {
     if (!canUse) return NextResponse.json({ error: "Kein Zugriff auf dieses Quiz" }, { status: 403 });
   }
 
-  // Only one active session per lobby
-  const existing = await prisma.quizSession.findFirst({
-    where: { lobbyId: parsed.data.lobbyId, status: { not: "ENDED" } },
-  });
-  if (existing) {
-    return NextResponse.json({ error: "Bereits eine aktive Session für diesen Raum" }, { status: 409 });
+  // Only one active session per lobby — transaction prevents concurrent duplicate creation
+  let quizSession;
+  try {
+    quizSession = await prisma.$transaction(async (tx) => {
+      const existing = await tx.quizSession.findFirst({
+        where: { lobbyId: parsed.data.lobbyId, status: { not: "ENDED" } },
+      });
+      if (existing) throw Object.assign(new Error("CONFLICT"), { code: "CONFLICT" });
+      return tx.quizSession.create({
+        data: {
+          quizId: parsed.data.quizId,
+          lobbyId: parsed.data.lobbyId,
+          teacherId,
+          gameMode: parsed.data.gameMode,
+          beamerMode: parsed.data.beamerMode,
+          speedMode: parsed.data.speedMode,
+          bossTimerSeconds: parsed.data.bossTimerSeconds ?? null,
+        },
+      });
+    });
+  } catch (err) {
+    if (err instanceof Error && (err as NodeJS.ErrnoException).code === "CONFLICT") {
+      return NextResponse.json({ error: "Bereits eine aktive Session für diesen Raum" }, { status: 409 });
+    }
+    throw err;
   }
-
-  const quizSession = await prisma.quizSession.create({
-    data: {
-      quizId: parsed.data.quizId,
-      lobbyId: parsed.data.lobbyId,
-      teacherId,
-      gameMode: parsed.data.gameMode,
-      beamerMode: parsed.data.beamerMode,
-      speedMode: parsed.data.speedMode,
-      bossTimerSeconds: parsed.data.bossTimerSeconds ?? null,
-    },
-  });
 
   // For AUTONOMOUS sessions, signal the socket server to auto-start after students connect
   if (quizSession.gameMode === "AUTONOMOUS") {
