@@ -1276,7 +1276,7 @@ function TeacherContent() {
             </div>
           )}
 
-          <div className="border-t pt-4 space-y-3">
+          {gameMode === "BEAMER" && <div className="border-t pt-4 space-y-3">
             <p className="text-xs text-gray-500 uppercase font-medium">Neues Spiel starten</p>
 
             {/* Quiz picker */}
@@ -1336,18 +1336,20 @@ function TeacherContent() {
                   className="w-16 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400" />
               </div>
             )}
-          </div>
+          </div>}
         </div>
 
-        <div className="px-4 pb-4 pt-2 border-t">
-          <button
-            onClick={startNextGame}
-            disabled={!canStartNext}
-            className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors"
-          >
-            ▶ Neues Spiel starten
-          </button>
-        </div>
+        {gameMode === "BEAMER" && (
+          <div className="px-4 pb-4 pt-2 border-t">
+            <button
+              onClick={startNextGame}
+              disabled={!canStartNext}
+              className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+            >
+              ▶ Neues Spiel starten
+            </button>
+          </div>
+        )}
       </Layout>
     );
   }
