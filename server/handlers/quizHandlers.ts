@@ -279,12 +279,26 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   const allCorrectIds = q.answers.filter((a) => a.isCorrect).map((a) => a.id);
   // SINGLE_CHOICE / YES_NO: guard against bad data where multiple answers are marked correct
   const correctIds = q.answerType === "MULTIPLE_CHOICE" ? allCorrectIds : allCorrectIds.slice(0, 1);
-  let bossAttacked = false;
+
+  // Only participants who were present when this question started count toward averaged damage.
+  // Late joiners (joinedAt > questionStartedAt) are excluded from the denominator so they don't
+  // dilute the team's output — they start contributing fully from their first seen question.
+  const questionStartedAt = session.questionStartedAt;
+  const wasPresent = (p: LiveParticipant) =>
+    questionStartedAt === null || p.joinedAt.getTime() <= questionStartedAt;
+  const eligibleParticipants = Array.from(session.participants.values()).filter(wasPresent);
+  const eligibleCount = eligibleParticipants.length;
+
+  // Individual damage per eligible participant (0 = wrong or unanswered)
+  const damages = new Map<string, number>();
 
   for (const p of session.participants.values()) {
+    const present = wasPresent(p);
+
     if (!p.answeredCurrentQuestion) {
-      // Unanswered = wrong for BOSS counter
-      if (session.beamerMode === "BOSS") applyBossWrongAnswer(session);
+      // Unanswered = wrong for BOSS counter (eligible only)
+      if (present && session.beamerMode === "BOSS") applyBossWrongAnswer(session, eligibleCount);
+      if (present) damages.set(p.participantId, 0);
       // Record unanswered entry in history
       if (!p.answerHistory.find((r) => r.absoluteIndex === session.absoluteQuestionIndex)) {
         p.answerHistory.push({
@@ -314,19 +328,13 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
 
     let scoreGained = 0;
     if (correct) {
-      const damage = calcDamage(session, q, p);
-      p.score += damage;
-      scoreGained = damage;
-
-      if (session.beamerMode === "TEAM_SHIELD" && p.teamIndex !== null && session.teamShields) {
-        const opp = (1 - p.teamIndex) as 0 | 1;
-        session.teamShields[opp] = Math.max(0, session.teamShields[opp] - damage);
-      }
-      if (session.beamerMode === "BOSS" && session.bossHp !== null) {
-        session.bossHp = Math.max(0, session.bossHp - damage);
-      }
+      const dmg = calcDamage(session, q, p);
+      p.score += dmg;
+      scoreGained = dmg;
+      if (present) damages.set(p.participantId, dmg);
     } else {
-      if (session.beamerMode === "BOSS") bossAttacked = applyBossWrongAnswer(session) || bossAttacked;
+      if (present && session.beamerMode === "BOSS") applyBossWrongAnswer(session, eligibleCount);
+      if (present) damages.set(p.participantId, 0);
     }
 
     // Update isCorrect in this question's history entry
@@ -337,6 +345,25 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
     if (clientSocket) {
       clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, scoreGained, totalScore: p.score });
     }
+  }
+
+  // Averaged shield damage — independent of team size
+  if (session.beamerMode === "TEAM_SHIELD" && session.teamShields) {
+    for (const teamIdx of [0, 1] as const) {
+      const members = eligibleParticipants.filter((m) => m.teamIndex === teamIdx);
+      if (members.length === 0) continue;
+      const totalDmg = members.reduce((s, m) => s + (damages.get(m.participantId) ?? 0), 0);
+      const avgDmg = Math.round(totalDmg / members.length);
+      const opp = (1 - teamIdx) as 0 | 1;
+      session.teamShields[opp] = Math.max(0, session.teamShields[opp] - avgDmg);
+    }
+  }
+
+  // Averaged boss damage — independent of participant count
+  if (session.beamerMode === "BOSS" && session.bossHp !== null && eligibleCount > 0) {
+    const totalDmg = eligibleParticipants.reduce((s, m) => s + (damages.get(m.participantId) ?? 0), 0);
+    const avgDmg = Math.round(totalDmg / eligibleCount);
+    session.bossHp = Math.max(0, session.bossHp - avgDmg);
   }
 
   // Distribution + beamer reveal
@@ -422,10 +449,10 @@ function calcDamage(
   return Math.max(0, Math.round(q.points * (1 - elapsed / timeLimitSecs)));
 }
 
-function applyBossWrongAnswer(session: LiveSession): boolean {
+function applyBossWrongAnswer(session: LiveSession, eligibleCount: number): boolean {
   if (session.bossWrongCount === null) return false;
   session.bossWrongCount++;
-  const threshold = Math.max(1, Math.ceil(session.participants.size / 4));
+  const threshold = Math.max(1, Math.ceil(eligibleCount / 4));
   if (session.bossWrongCount % threshold === 0 && session.bossTimerEnd !== null) {
     session.bossTimerEnd = Math.max(Date.now(), session.bossTimerEnd - 60_000);
     return true; // attacked
@@ -479,8 +506,8 @@ function initTeams(io: Server, session: LiveSession, totalQuestions: number, avg
       });
     }
   });
-  const teamSize = Math.max(1, mid);
-  session.teamShieldMax = Math.max(10, Math.ceil(teamSize * avgPoints * totalQuestions * 0.5));
+  // Fixed HP independent of team size — damage is averaged per question, not cumulative
+  session.teamShieldMax = Math.max(10, Math.ceil(avgPoints * totalQuestions * 0.5));
   session.teamShields = [session.teamShieldMax, session.teamShieldMax];
 }
 
@@ -492,7 +519,8 @@ function initBoss(
   const bossTimerSecs = session.bossTimerSeconds ?? 900;
   const avgSecs = questions.reduce((s, q) => s + (q.timeLimitSecs ?? 30), 0) / questions.length;
   const questionsInTime = Math.round(bossTimerSecs / avgSecs);
-  session.bossMaxHp = Math.max(10, Math.round(questionsInTime * session.participants.size * avgPoints * 0.5));
+  // Fixed HP independent of participant count — damage is averaged per question, not cumulative
+  session.bossMaxHp = Math.max(10, Math.round(questionsInTime * avgPoints * 0.5));
   session.bossHp = session.bossMaxHp;
   session.bossTimerEnd = Date.now() + bossTimerSecs * 1000;
   session.bossWrongCount = 0;

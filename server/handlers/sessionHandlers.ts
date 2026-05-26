@@ -42,6 +42,8 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       });
     }
 
+    const isReconnect = session.participants.has(payload.sub);
+
     sessionManager.addParticipant(session.sessionId, {
       socketId: socket.id,
       participantId: payload.sub,
@@ -69,8 +71,42 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
 
     ack?.({ ok: true, gameMode: session.gameMode });
 
-    // Send current question if session is already active
+    // Send current state if session is already active
     if (session.currentQuestionIndex >= 0) {
+      // TEAM_SHIELD: assign late joiner to smaller team; re-send assignment on reconnect
+      if (session.beamerMode === "TEAM_SHIELD" && session.teamShields) {
+        const p = session.participants.get(payload.sub)!;
+        if (!isReconnect) {
+          const t0 = Array.from(session.participants.values()).filter((m) => m.teamIndex === 0).length;
+          const t1 = Array.from(session.participants.values()).filter((m) => m.teamIndex === 1).length;
+          p.teamIndex = t0 <= t1 ? 0 : 1;
+        }
+        if (p.teamIndex !== null) {
+          socket.emit(QUIZ_EVENTS.TEAM_ASSIGNED, {
+            teamIndex: p.teamIndex,
+            teamName: p.teamIndex === 0 ? "Team Grün" : "Team Lila",
+          });
+        }
+        socket.emit(QUIZ_EVENTS.SHIELD_STATE, {
+          teams: [
+            { name: "Team Grün", hp: session.teamShields[0], maxHp: session.teamShieldMax ?? 1 },
+            { name: "Team Lila", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
+          ],
+        });
+      }
+
+      // BOSS: send current boss state to (re)joining student
+      if (session.beamerMode === "BOSS") {
+        socket.emit(QUIZ_EVENTS.BOSS_STATE, {
+          hp: session.bossHp,
+          maxHp: session.bossMaxHp,
+          timerEnd: session.bossTimerEnd,
+          ability: session.currentBossAbility,
+          wrongCount: session.bossWrongCount,
+          threshold: Math.max(1, Math.ceil(session.participants.size / 4)),
+        });
+      }
+
       await sendCurrentQuestion(io, socket.id, session, sessionManager);
     }
   });
