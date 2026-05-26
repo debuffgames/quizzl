@@ -170,6 +170,7 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
   const phaseRef = useRef<"question" | "revealed" | "ended">("question");
   const timeLeftRef = useRef<number | null>(questions[0]?.timeLimitSecs ?? null);
   const prevPhaseRef = useRef<"question" | "revealed" | "ended">("question");
+  const questionStartedAtRef = useRef(Date.now());
 
   useEffect(() => { qIndexRef.current = qIndex; }, [qIndex]);
   useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
@@ -250,6 +251,15 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
     setReveal({ correctAnswerIds: correctIds, scoreGained: gained, totalScore: scoreRef.current });
 
     const idx = qIndexRef.current;
+    const timeTakenSecs = Math.max(0, (Date.now() - questionStartedAtRef.current) / 1000);
+    socket.emit(QUIZ_EVENTS.STUDENT_PROGRESS, {
+      questionId: q.id,
+      questionIndex: idx,
+      answerIds,
+      isCorrect: gained > 0,
+      timeTakenSecs: parseFloat(timeTakenSecs.toFixed(1)),
+    });
+
     window.parent.postMessage({
       type: "PROGRESS",
       progress: questions.length > 0 ? (idx + 1) / questions.length : 0,
@@ -289,6 +299,7 @@ function AutonomousPlay({ questions, socket }: { questions: FullQuestion[]; sock
       const secs = questions[nextIndex].timeLimitSecs ?? null;
       timeLeftRef.current = secs;
       setTimeLeft(secs);
+      questionStartedAtRef.current = Date.now();
     }
   }, [questions, socket]);
 

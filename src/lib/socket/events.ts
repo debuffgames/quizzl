@@ -33,6 +33,10 @@ export const QUIZ_EVENTS = {
   PLAYER_JOINED: "quiz:playerJoined",
   PLAYER_LEFT: "quiz:playerLeft",
   PENDING_END: "quiz:pendingEnd",          // win condition reached — next teacher click shows end screen
+  STATS_UPDATE: "quiz:statsUpdate",        // real-time per-player analytics
+
+  // Student → Server
+  STUDENT_PROGRESS: "quiz:studentProgress", // AUTONOMOUS: per-question result
 
   // Server → Beamer
   SESSION_STARTED: "quiz:sessionStarted",  // new session in same lobby — beamer should reset

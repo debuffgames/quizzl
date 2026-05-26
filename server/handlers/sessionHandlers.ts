@@ -53,6 +53,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       revealSent: false,
       teamIndex: null,
       joinedAt: new Date(),
+      answerHistory: [],
     });
 
     socket.join(session.sessionId);

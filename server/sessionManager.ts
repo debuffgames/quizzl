@@ -2,6 +2,15 @@
 
 import type { BossAbility } from "../src/lib/socket/events";
 
+export interface AnswerRecord {
+  questionId: string;
+  questionIndex: number;   // 0-based index in quiz, for looking up question data
+  absoluteIndex: number;   // ever-increasing across loops, for reveal correlation
+  answerIds: string[];
+  isCorrect: boolean | null;  // null until revealed (BEAMER); set immediately (AUTONOMOUS)
+  timeTakenSecs: number | null;
+}
+
 export interface LiveParticipant {
   socketId: string;
   participantId: string;
@@ -13,6 +22,7 @@ export interface LiveParticipant {
   revealSent: boolean;                // AUTONOMOUS: reveal already sent to this participant
   teamIndex: 0 | 1 | null;           // TEAM_SHIELD: which team (0=Grün, 1=Lila)
   joinedAt: Date;
+  answerHistory: AnswerRecord[];
 }
 
 export interface LiveSession {
@@ -33,6 +43,10 @@ export interface LiveSession {
 
   // BLITZ / SUPER_BLITZ: epoch ms when answers became visible; null = not yet (BLITZ) or NORMAL
   answersVisibleAt: number | null;
+
+  // Analytics
+  questionStartedAt: number | null;  // epoch ms when current question was sent to all clients
+  absoluteQuestionIndex: number;     // ever-increasing (never resets on loop); -1 before first question
 
   // TEAM_SHIELD
   teamShieldMax: number | null;
@@ -56,13 +70,15 @@ export class SessionManager {
   private lobbyBeamerSockets = new Map<string, string>();   // lobbyId → beamer socketId (persists across sessions)
   private beamerSocketToLobby = new Map<string, string>();  // beamer socketId → lobbyId (for cleanup)
 
-  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd">): LiveSession {
+  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd">): LiveSession {
     const live: LiveSession = {
       ...session,
       questionTimerHandle: null,
       participants: new Map(),
       socketToParticipant: new Map(),
       answersVisibleAt: null,
+      questionStartedAt: null,
+      absoluteQuestionIndex: -1,
       teamShieldMax: null,
       teamShields: null,
       bossMaxHp: null,

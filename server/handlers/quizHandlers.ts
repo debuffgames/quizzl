@@ -3,6 +3,22 @@ import { prisma } from "../../src/lib/db/prisma";
 import { QUIZ_EVENTS, type BossAbility } from "../../src/lib/socket/events";
 import type { SessionManager, LiveSession, LiveParticipant } from "../sessionManager";
 
+export function emitStatsUpdate(io: Server, session: LiveSession) {
+  if (!session.teacherSocketId) return;
+  const isAutonomous = session.gameMode === "AUTONOMOUS";
+  const participants = Array.from(session.participants.values()).map((p) => ({
+    participantId: p.participantId,
+    displayName: p.displayName,
+    score: p.score,
+    currentQuestionIndex: isAutonomous ? p.answerHistory.length : session.currentQuestionIndex,
+    answeredCurrentQuestion: p.answeredCurrentQuestion,
+    correctCount: p.answerHistory.filter((r) => r.isCorrect === true).length,
+    wrongCount: p.answerHistory.filter((r) => r.isCorrect === false).length,
+    history: p.answerHistory,
+  }));
+  io.to(session.teacherSocketId).emit(QUIZ_EVENTS.STATS_UPDATE, { participants });
+}
+
 export function registerQuizHandlers(io: Server, socket: Socket, sessionManager: SessionManager) {
   socket.on(QUIZ_EVENTS.NEXT_QUESTION, async () => {
     const sessionId = getControllerSession(socket, sessionManager);
@@ -141,6 +157,8 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
 
   const question = quiz.questions[nextIndex];
   session.currentQuestionIndex = nextIndex;
+  session.absoluteQuestionIndex = session.absoluteQuestionIndex < 0 ? 0 : session.absoluteQuestionIndex + 1;
+  session.questionStartedAt = Date.now();
 
   // Boss ability for this question
   if (session.beamerMode === "BOSS") {
@@ -225,6 +243,8 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
   if (session.beamerMode === "BOSS") sendBossState(io, session);
   if (session.beamerMode === "TEAM_SHIELD") sendShieldState(io, session);
 
+  emitStatsUpdate(io, session);
+
   // SUPER_BLITZ: notify all that countdown starts now
   if (session.speedMode === "SUPER_BLITZ" && session.answersVisibleAt) {
     const visMsg = { startsAt: session.answersVisibleAt, timeLimitSecs: effectiveTimeLimitSecs };
@@ -265,6 +285,20 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
     if (!p.answeredCurrentQuestion) {
       // Unanswered = wrong for BOSS counter
       if (session.beamerMode === "BOSS") applyBossWrongAnswer(session);
+      // Record unanswered entry in history
+      if (!p.answerHistory.find((r) => r.absoluteIndex === session.absoluteQuestionIndex)) {
+        p.answerHistory.push({
+          questionId: q.id,
+          questionIndex: session.currentQuestionIndex,
+          absoluteIndex: session.absoluteQuestionIndex,
+          answerIds: [],
+          isCorrect: false,
+          timeTakenSecs: null,
+        });
+      } else {
+        const entry = p.answerHistory.find((r) => r.absoluteIndex === session.absoluteQuestionIndex)!;
+        entry.isCorrect = false;
+      }
       const clientSocket = io.sockets.sockets.get(p.socketId);
       if (clientSocket) {
         clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, scoreGained: 0, totalScore: p.score });
@@ -295,6 +329,10 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
       if (session.beamerMode === "BOSS") bossAttacked = applyBossWrongAnswer(session) || bossAttacked;
     }
 
+    // Update isCorrect in this question's history entry
+    const histEntry = p.answerHistory.find((r) => r.absoluteIndex === session.absoluteQuestionIndex);
+    if (histEntry) histEntry.isCorrect = correct;
+
     const clientSocket = io.sockets.sockets.get(p.socketId);
     if (clientSocket) {
       clientSocket.emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, scoreGained, totalScore: p.score });
@@ -321,6 +359,8 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   // Push updated mode state
   if (session.beamerMode === "TEAM_SHIELD") sendShieldState(io, session);
   if (session.beamerMode === "BOSS") sendBossState(io, session);
+
+  emitStatsUpdate(io, session);
 
   // Win/loss conditions — defer END so the beamer animation plays before the scoreboard appears
   if (session.beamerMode === "TEAM_SHIELD" && session.teamShields) {

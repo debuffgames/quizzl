@@ -49,6 +49,25 @@ interface BossStateData {
 }
 interface ShieldStateData { teams: { name: string; hp: number; maxHp: number }[] }
 
+interface AnswerRecord {
+  questionId: string;
+  questionIndex: number;
+  absoluteIndex: number;
+  answerIds: string[];
+  isCorrect: boolean | null;
+  timeTakenSecs: number | null;
+}
+interface PlayerStats {
+  participantId: string;
+  displayName: string;
+  score: number;
+  currentQuestionIndex: number;
+  answeredCurrentQuestion: boolean;
+  correctCount: number;
+  wrongCount: number;
+  history: AnswerRecord[];
+}
+
 const BEAMER_STYLES = [
   { bg: "bg-red-500",    text: "text-white",     symbol: "▲" },
   { bg: "bg-blue-500",   text: "text-white",     symbol: "●" },
@@ -262,6 +281,12 @@ function TeacherContent() {
   const [answersVisible, setAnswersVisible] = useState(false);
   const [pendingEnd, setPendingEnd] = useState(false);
   const [bossState, setBossState] = useState<BossStateData | null>(null);
+  // Analytics
+  const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
+  const [showStats, setShowStats] = useState(false);
+  const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
+  const [quizData, setQuizData] = useState<FullQuiz | null>(null);
+
   // "New game" panel state (shown on ended screen)
   const [nextQuizId, setNextQuizId] = useState<string | null>(null);
   const [nextBeamerMode, setNextBeamerMode] = useState<BeamerMode>("STANDARD");
@@ -293,6 +318,14 @@ function TeacherContent() {
     setOwnQuizzes(Array.isArray(own) ? own : []);
     setPublicQuizzes(Array.isArray(pub) ? pub : []);
   }, []);
+
+  // Fetch full quiz data (question + answer texts) whenever the active quiz is known
+  useEffect(() => {
+    if (!selectedQuiz?.id) return;
+    fetch(`/api/quizzes/${selectedQuiz.id}`, { credentials: "include" })
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => { if (data) setQuizData(data); });
+  }, [selectedQuiz?.id]);
 
   const applyVisibilityChange = async (quizId: string, newVis: "PRIVATE" | "SCHOOL" | "PUBLIC") => {
     await fetch(`/api/quizzes/${quizId}`, {
@@ -391,6 +424,7 @@ function TeacherContent() {
 
     socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
     socket.on(QUIZ_EVENTS.ANSWER_DIST, ({ distribution: d }: { distribution: AnswerDist[] }) => { setDistribution(d); setRevealed(true); });
+    socket.on(QUIZ_EVENTS.STATS_UPDATE, ({ participants }: { participants: PlayerStats[] }) => setPlayerStats(participants));
 
     socket.on(QUIZ_EVENTS.SCOREBOARD, ({ topN }: { topN: TopScore[] }) => setTopScores(topN));
     socket.on(QUIZ_EVENTS.END, ({ topScores: ts }: { topScores: TopScore[] }) => {
@@ -1204,6 +1238,75 @@ function TeacherContent() {
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Analytics panel */}
+          {playerStats.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowStats((v) => !v)}
+                className="flex items-center justify-between w-full text-xs text-gray-400 uppercase font-medium mb-2"
+              >
+                <span>Spieler ({playerStats.filter((p) => p.answeredCurrentQuestion).length}/{playerStats.length})</span>
+                <span>{showStats ? "▲" : "▼"}</span>
+              </button>
+              {showStats && (
+                <div className="space-y-0.5">
+                  {playerStats.map((p) => {
+                    const isExpanded = expandedPlayer === p.participantId;
+                    return (
+                      <div key={p.participantId}>
+                        <button
+                          onClick={() => setExpandedPlayer(isExpanded ? null : p.participantId)}
+                          className="flex items-center gap-2 w-full px-2 py-1.5 bg-gray-50 rounded-lg text-left hover:bg-gray-100"
+                        >
+                          {gameMode === "AUTONOMOUS" ? (
+                            <span className="text-xs text-indigo-500 font-semibold w-8 shrink-0">
+                              F{p.currentQuestionIndex + 1}
+                            </span>
+                          ) : (
+                            <span className={`text-xs w-4 shrink-0 ${p.answeredCurrentQuestion ? "text-emerald-500" : "text-gray-300"}`}>
+                              {p.answeredCurrentQuestion ? "✓" : "–"}
+                            </span>
+                          )}
+                          <span className="flex-1 text-sm truncate">{p.displayName}</span>
+                          <span className="text-xs text-emerald-600 font-medium">{p.correctCount}✓</span>
+                          <span className="text-xs text-red-400 mr-1">{p.wrongCount}✗</span>
+                          <span className="text-gray-300 text-xs">{isExpanded ? "▲" : "▼"}</span>
+                        </button>
+                        {isExpanded && (
+                          <div className="pl-6 py-1 space-y-0.5">
+                            {p.history.length === 0 && (
+                              <p className="text-xs text-gray-300 py-1">Noch keine Antworten</p>
+                            )}
+                            {p.history.map((rec) => {
+                              const qDef = quizData?.questions[rec.questionIndex];
+                              const answerLabels = rec.answerIds.map((id) => {
+                                const a = qDef?.answers.find((a) => a.id === id);
+                                if (!a) return "?";
+                                return a.text.length > 14 ? a.text.slice(0, 13) + "…" : a.text;
+                              }).join(", ");
+                              return (
+                                <div key={rec.absoluteIndex} className="flex items-center gap-2 text-xs text-gray-500 py-0.5">
+                                  <span className="shrink-0 text-gray-300 w-5">F{rec.questionIndex + 1}</span>
+                                  <span className="flex-1 truncate text-gray-600">{answerLabels || "–"}</span>
+                                  <span className={`shrink-0 font-semibold ${rec.isCorrect === true ? "text-emerald-500" : rec.isCorrect === false ? "text-red-400" : "text-gray-300"}`}>
+                                    {rec.isCorrect === true ? "✓" : rec.isCorrect === false ? "✗" : "?"}
+                                  </span>
+                                  {rec.timeTakenSecs !== null && (
+                                    <span className="shrink-0 text-gray-300">{rec.timeTakenSecs.toFixed(1)}s</span>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
