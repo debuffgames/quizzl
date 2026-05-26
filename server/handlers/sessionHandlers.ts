@@ -119,6 +119,10 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     // If session is already active, send the current question to the teacher
     if (session.currentQuestionIndex >= 0) {
       await sendCurrentQuestion(io, socket.id, session, sessionManager);
+      // Restore pending-end state so the teacher sees "Ergebnis anzeigen" after a win
+      if (session.pendingEnd) {
+        socket.emit(QUIZ_EVENTS.PENDING_END);
+      }
     }
   });
 
