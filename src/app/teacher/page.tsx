@@ -262,6 +262,11 @@ function TeacherContent() {
   const [answersVisible, setAnswersVisible] = useState(false);
   const [pendingEnd, setPendingEnd] = useState(false);
   const [bossState, setBossState] = useState<BossStateData | null>(null);
+  // "New game" panel state (shown on ended screen)
+  const [nextQuizId, setNextQuizId] = useState<string | null>(null);
+  const [nextBeamerMode, setNextBeamerMode] = useState<BeamerMode>("STANDARD");
+  const [nextSpeedMode, setNextSpeedMode] = useState<SpeedMode>("NORMAL");
+  const [nextBossTimerMins, setNextBossTimerMins] = useState(15);
   const [shieldState, setShieldState] = useState<ShieldStateData | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
 
@@ -412,6 +417,15 @@ function TeacherContent() {
     const id = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(id);
   }, [beamerMode, bossState]);
+
+  // When the game ends, pre-fill new-game panel with current settings and refresh quiz list
+  useEffect(() => {
+    if (phase !== "ended") return;
+    setNextBeamerMode(beamerMode);
+    setNextSpeedMode(speedMode);
+    setNextQuizId(null);
+    fetchQuizzes();
+  }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Forward spacebar commands from the hub parent window
   useEffect(() => {
@@ -1230,22 +1244,109 @@ function TeacherContent() {
 
   // ── ENDED ──
   if (phase === "ended") {
+    const allQuizzes = [...ownQuizzes, ...publicQuizzes.filter((q) => !ownQuizzes.find((o) => o.id === q.id))];
+    const canStartNext = nextQuizId !== null;
+    const startNextGame = () => {
+      if (!nextQuizId) return;
+      window.parent.postMessage({
+        type: "RESTART_WITH_CONFIG",
+        config: {
+          quizId: nextQuizId,
+          gameMode: "BEAMER",
+          beamerMode: nextBeamerMode,
+          speedMode: nextSpeedMode,
+          ...(nextBeamerMode === "BOSS" ? { bossTimerSeconds: nextBossTimerMins * 60 } : {}),
+        },
+      }, "*");
+    };
     return (
       <Layout>
-        <div className="flex-1 flex flex-col items-center justify-center px-6 gap-4">
-          <h2 className="text-2xl font-bold">Quizzl beendet!</h2>
+        <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+          <h2 className="text-xl font-bold text-center">Quizzl beendet!</h2>
           {topScores.length > 0 && (
-            <div className="w-full max-w-sm space-y-2">
-              <p className="text-xs text-gray-400 uppercase font-medium text-center mb-2">Endstand</p>
+            <div className="space-y-1.5">
+              <p className="text-xs text-gray-400 uppercase font-medium">Endstand</p>
               {topScores.map((s) => (
-                <div key={s.rank} className={`flex items-center gap-3 px-4 py-2 rounded-xl ${s.rank === 1 ? "bg-yellow-50 border border-yellow-200" : "bg-gray-50"}`}>
+                <div key={s.rank} className={`flex items-center gap-3 px-3 py-2 rounded-xl ${s.rank === 1 ? "bg-yellow-50 border border-yellow-200" : "bg-gray-50"}`}>
                   <span className="text-gray-400 w-5 text-sm">{s.rank}.</span>
-                  <span className="flex-1 font-medium">{s.displayName}</span>
-                  <span className="font-bold">{s.score}</span>
+                  <span className="flex-1 font-medium text-sm">{s.displayName}</span>
+                  <span className="font-bold text-sm">{s.score}</span>
                 </div>
               ))}
             </div>
           )}
+
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-xs text-gray-500 uppercase font-medium">Neues Spiel starten</p>
+
+            {/* Quiz picker */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Quiz auswählen</label>
+              <select
+                value={nextQuizId ?? ""}
+                onChange={(e) => setNextQuizId(e.target.value || null)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">— Quiz wählen —</option>
+                {ownQuizzes.length > 0 && (
+                  <optgroup label="Meine Quizzls">
+                    {ownQuizzes.map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
+                  </optgroup>
+                )}
+                {publicQuizzes.filter((q) => !ownQuizzes.find((o) => o.id === q.id)).length > 0 && (
+                  <optgroup label="Öffentlich">
+                    {publicQuizzes.filter((q) => !ownQuizzes.find((o) => o.id === q.id)).map((q) => <option key={q.id} value={q.id}>{q.title}</option>)}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+
+            {/* Beamer mode */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Modus</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(["STANDARD", "TEAM_SHIELD", "BOSS"] as BeamerMode[]).map((m) => (
+                  <button key={m} onClick={() => setNextBeamerMode(m)}
+                    className={`py-1.5 rounded-lg text-xs font-semibold border transition-colors ${nextBeamerMode === m ? "bg-indigo-600 text-white border-indigo-600" : "bg-white text-gray-600 border-gray-200 hover:border-indigo-300"}`}>
+                    {m === "STANDARD" ? "Standard" : m === "TEAM_SHIELD" ? "Schild" : "Boss"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Speed mode */}
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Geschwindigkeit</label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(["NORMAL", "BLITZ", "SUPER_BLITZ"] as SpeedMode[]).map((s) => (
+                  <button key={s} onClick={() => setNextSpeedMode(s)}
+                    className={`py-1.5 rounded-lg text-xs font-semibold border transition-colors ${nextSpeedMode === s ? "bg-violet-600 text-white border-violet-600" : "bg-white text-gray-600 border-gray-200 hover:border-violet-300"}`}>
+                    {s === "NORMAL" ? "Normal" : s === "BLITZ" ? "Blitz" : "Super Blitz"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Boss timer (only for BOSS mode) */}
+            {nextBeamerMode === "BOSS" && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-gray-500 shrink-0">Boss-Timer (Min.)</label>
+                <input type="number" min={5} max={60} value={nextBossTimerMins}
+                  onChange={(e) => setNextBossTimerMins(Math.max(5, Math.min(60, Number(e.target.value))))}
+                  className="w-16 border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-indigo-400" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 pb-4 pt-2 border-t">
+          <button
+            onClick={startNextGame}
+            disabled={!canStartNext}
+            className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors"
+          >
+            ▶ Neues Spiel starten
+          </button>
         </div>
       </Layout>
     );
