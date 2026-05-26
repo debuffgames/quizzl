@@ -67,6 +67,7 @@ function BeamerContent() {
   const [reconnecting, setReconnecting] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
+  const hasJoinedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevShieldHpRef = useRef<[number, number] | null>(null);
   const shieldStateRef = useRef<ShieldState | null>(null);
@@ -137,10 +138,18 @@ function BeamerContent() {
       socket.on("connect", () => {
         setReconnecting(false);
         socket.emit(QUIZ_EVENTS.BEAMER_JOIN, { lobbyId, token }, (ack: { ok: boolean; beamerMode?: string; speedMode?: string; error?: string }) => {
-          if (!ack.ok) { setError(ack.error ?? "Verbindung fehlgeschlagen"); setPhase("error"); return; }
-          if (ack.beamerMode) setBeamerMode(ack.beamerMode);
-          if (ack.speedMode) setSpeedMode(ack.speedMode);
-          setPhase("waiting");
+          if (!ack.ok) {
+            if (!hasJoinedRef.current) { setError(ack.error ?? "Verbindung fehlgeschlagen"); setPhase("error"); }
+            return;
+          }
+          const isReconnect = hasJoinedRef.current;
+          hasJoinedRef.current = true;
+          if (!isReconnect) {
+            if (ack.beamerMode) setBeamerMode(ack.beamerMode);
+            if (ack.speedMode) setSpeedMode(ack.speedMode);
+            setPhase("waiting");
+          }
+          // On reconnect the server sends QUESTION via sendCurrentQuestion → phase restores automatically
         });
       });
 

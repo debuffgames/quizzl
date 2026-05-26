@@ -299,6 +299,7 @@ function TeacherContent() {
 
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const hasTeacherJoinedRef = useRef(false);
 
   // Refs for keyboard/postMessage handler (avoids stale closures)
   const phaseRef = useRef<Phase>("loading");
@@ -399,11 +400,18 @@ function TeacherContent() {
     socket.on("connect", () => {
       setSocketConnected(true);
       socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; error?: string }) => {
-        if (!ack.ok) { setError(ack.error ?? "Socket-Verbindung fehlgeschlagen"); setPhase("error"); return; }
-        if (ack.gameMode === "BEAMER" || ack.gameMode === "AUTONOMOUS") setGameMode(ack.gameMode);
-        if (ack.beamerMode === "TEAM_SHIELD" || ack.beamerMode === "BOSS") setBeamerMode(ack.beamerMode);
-        if (ack.speedMode === "BLITZ" || ack.speedMode === "SUPER_BLITZ") setSpeedMode(ack.speedMode);
-        setPhase(initialPhase);
+        if (!ack.ok) {
+          if (!hasTeacherJoinedRef.current) { setError(ack.error ?? "Socket-Verbindung fehlgeschlagen"); setPhase("error"); }
+          return;
+        }
+        const isReconnect = hasTeacherJoinedRef.current;
+        hasTeacherJoinedRef.current = true;
+        if (!isReconnect) {
+          if (ack.gameMode === "BEAMER" || ack.gameMode === "AUTONOMOUS") setGameMode(ack.gameMode);
+          if (ack.beamerMode === "TEAM_SHIELD" || ack.beamerMode === "BOSS") setBeamerMode(ack.beamerMode);
+          if (ack.speedMode === "BLITZ" || ack.speedMode === "SUPER_BLITZ") setSpeedMode(ack.speedMode);
+          setPhase(initialPhase);
+        }
       });
     });
 
@@ -1127,7 +1135,7 @@ function TeacherContent() {
         </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
-          {currentQ && (
+          {currentQ && gameMode !== "AUTONOMOUS" && (
             <div>
               <p className="font-semibold text-sm leading-snug mb-3">{currentQ.text}</p>
 

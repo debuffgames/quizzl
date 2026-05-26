@@ -215,18 +215,33 @@ async function sendCurrentQuestion(io: Server, socketId: string, session: import
     ? Math.max(0, Math.round((session.questionTimerEnd - Date.now()) / 1000))
     : null;
 
+  const isBeamer = socketId === session.beamerSocketId;
+  const isTeacher = socketId === session.teacherSocketId;
+  const includeText = session.gameMode === "AUTONOMOUS" || isBeamer || isTeacher;
+
   io.to(socketId).emit(QUIZ_EVENTS.QUESTION, {
     id: question.id,
-    text: session.gameMode === "AUTONOMOUS" ? question.text : undefined,
+    text: includeText ? question.text : undefined,
     answerType: question.answerType,
     answers: question.answers.map((a) => ({
       id: a.id,
-      text: session.gameMode === "AUTONOMOUS" ? a.text : undefined,
+      text: includeText
+        ? (isBeamer && session.hiddenAnswerId === a.id ? null : a.text)
+        : undefined,
       sortOrder: a.sortOrder,
     })),
     timeLimitSecs: question.timeLimitSecs,
     remainingSecs,
     index: session.currentQuestionIndex,
     total: quiz?.questions.length ?? 0,
+    // Restore speed/visibility/boss state so reconnecting clients get the right UI
+    speedMode: !isTeacher ? session.speedMode : undefined,
+    answersVisibleAt: !isTeacher ? session.answersVisibleAt : undefined,
+    bossAbility: isBeamer
+      ? session.currentBossAbility
+      : !isTeacher
+        ? (session.currentBossAbility === "DANCING_BUZZERS" ? "DANCING_BUZZERS" : null)
+        : undefined,
+    hiddenAnswerId: isBeamer ? session.hiddenAnswerId : undefined,
   });
 }
