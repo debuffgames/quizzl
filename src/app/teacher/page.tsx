@@ -268,6 +268,18 @@ function TeacherContent() {
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
 
+  // Refs for keyboard/postMessage handler (avoids stale closures)
+  const phaseRef = useRef<Phase>("loading");
+  const revealedRef = useRef(false);
+  const speedModeRef = useRef<SpeedMode>("NORMAL");
+  const answersVisibleRef = useRef(false);
+  const pendingEndRef = useRef(false);
+  useEffect(() => { phaseRef.current = phase; }, [phase]);
+  useEffect(() => { revealedRef.current = revealed; }, [revealed]);
+  useEffect(() => { speedModeRef.current = speedMode; }, [speedMode]);
+  useEffect(() => { answersVisibleRef.current = answersVisible; }, [answersVisible]);
+  useEffect(() => { pendingEndRef.current = pendingEnd; }, [pendingEnd]);
+
   const fetchQuizzes = useCallback(async () => {
     const [own, pub] = await Promise.all([
       fetch("/api/quizzes?scope=own", { credentials: "include" }).then((r) => r.json()),
@@ -400,6 +412,23 @@ function TeacherContent() {
     const id = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(id);
   }, [beamerMode, bossState]);
+
+  // Forward spacebar commands from the hub parent window
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.data?.type !== "KEYBOARD_CMD") return;
+      if (phaseRef.current !== "active") return;
+      if (revealedRef.current) {
+        socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
+      } else if (speedModeRef.current === "BLITZ" && !answersVisibleRef.current) {
+        socketRef.current?.emit(QUIZ_EVENTS.SHOW_ANSWERS);
+      } else {
+        socketRef.current?.emit(QUIZ_EVENTS.REVEAL_ANSWER);
+      }
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openBeamer = () => {
     if (!lobbyId) return;
