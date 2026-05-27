@@ -459,7 +459,9 @@ function applyBossWrongAnswer(session: LiveSession, eligibleCount: number): bool
   session.bossWrongCount++;
   const threshold = Math.max(1, Math.ceil(eligibleCount / 4));
   if (session.bossWrongCount % threshold === 0 && session.bossTimerEnd !== null) {
-    session.bossTimerEnd = Math.max(Date.now(), session.bossTimerEnd - 60_000);
+    // Penalty = 10% of total boss timer, minimum 20 s
+    const penaltySecs = Math.max(20, Math.round((session.bossTimerSeconds ?? 300) * 0.1));
+    session.bossTimerEnd = Math.max(Date.now(), session.bossTimerEnd - penaltySecs * 1000);
     return true; // attacked
   }
   return false;

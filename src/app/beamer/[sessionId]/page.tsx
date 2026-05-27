@@ -65,6 +65,8 @@ function BeamerContent() {
   const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
   const [bossAnimTrigger, setBossAnimTrigger] = useState<{ type: "attack" | "steal"; value: number; key: number } | null>(null);
   const [bossChargeAnim, setBossChargeAnim] = useState<{ type: "attack" | "steal"; finalValue: number; progress: number; key: number } | null>(null);
+  const [stampVisible, setStampVisible] = useState(false);
+  const [quaking, setQuaking] = useState(false);
 
   const [reconnecting, setReconnecting] = useState(false);
 
@@ -75,12 +77,21 @@ function BeamerContent() {
   const prevBossHpRef = useRef<number | null>(null);
   const prevBossTimerEndRef = useRef<number | null>(null);
   const bossChargeRafRef = useRef<number | null>(null);
+  const pendingBossStateRef = useRef<BossState | null>(null);
+  const stampTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const quakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shieldStateRef = useRef<ShieldState | null>(null);
   useEffect(() => { shieldStateRef.current = shieldState; }, [shieldState]);
 
   useEffect(() => {
     if (!bossAnimTrigger) return;
-    const id = setTimeout(() => setBossAnimTrigger(null), 1200);
+    const id = setTimeout(() => {
+      setBossAnimTrigger(null);
+      if (pendingBossStateRef.current) {
+        setBossState(pendingBossStateRef.current);
+        pendingBossStateRef.current = null;
+      }
+    }, 1200);
     return () => clearTimeout(id);
   }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -106,6 +117,25 @@ function BeamerContent() {
     bossChargeRafRef.current = rafRef.current;
     return () => { cancelAnimationFrame(rafRef.current); };
   }, [bossChargeAnim?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Boss ability stamp — appears 1 s after question, triggers screen shake
+  useEffect(() => {
+    setStampVisible(false);
+    setQuaking(false);
+    if (stampTimerRef.current) clearTimeout(stampTimerRef.current);
+    if (quakeTimerRef.current) clearTimeout(quakeTimerRef.current);
+    const currentAbility = question?.bossAbility;
+    if (!currentAbility || currentAbility === "NONE") return;
+    stampTimerRef.current = setTimeout(() => {
+      setStampVisible(true);
+      setQuaking(true);
+      quakeTimerRef.current = setTimeout(() => setQuaking(false), 500);
+    }, 1000);
+    return () => {
+      if (stampTimerRef.current) clearTimeout(stampTimerRef.current);
+      if (quakeTimerRef.current) clearTimeout(quakeTimerRef.current);
+    };
+  }, [question?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refs so the keyboard handler always reads current state without stale closures
   const phaseRef = useRef(phase);
@@ -151,8 +181,13 @@ function BeamerContent() {
     setShieldResult(null);
     setBossAnimTrigger(null);
     setBossChargeAnim(null);
+    setStampVisible(false);
+    setQuaking(false);
+    pendingBossStateRef.current = null;
     prevBossHpRef.current = null;
     prevBossTimerEndRef.current = null;
+    if (stampTimerRef.current) clearTimeout(stampTimerRef.current);
+    if (quakeTimerRef.current) clearTimeout(quakeTimerRef.current);
     if (bm) setBeamerMode(bm);
     if (sm) setSpeedMode(sm);
     setPhase("waiting");
@@ -216,12 +251,20 @@ function BeamerContent() {
         const prevTimerEnd = prevBossTimerEndRef.current;
         prevBossHpRef.current = data.hp;
         prevBossTimerEndRef.current = data.timerEnd;
+        let willAnimate = false;
         if (prevHp !== null && data.hp < prevHp) {
           setBossChargeAnim({ type: "attack", finalValue: prevHp - data.hp, progress: 0, key: Date.now() });
+          willAnimate = true;
         } else if (prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000) {
           setBossChargeAnim({ type: "steal", finalValue: Math.round((prevTimerEnd - data.timerEnd) / 1000), progress: 0, key: Date.now() });
+          willAnimate = true;
         }
-        setBossState(data);
+        // Delay visual HP/timer update until after the charge+fly animation completes
+        if (willAnimate) {
+          pendingBossStateRef.current = data;
+        } else {
+          setBossState(data);
+        }
         setBeamerMode("BOSS");
       });
       socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldState) => {
@@ -338,11 +381,11 @@ function BeamerContent() {
           <div className="flex flex-col items-center gap-4 pt-4">
             <p className="text-8xl">{classWon ? "⚔️" : "💀"}</p>
             <h1 className={`text-6xl font-black text-center leading-tight ${classWon ? "text-yellow-400" : "text-red-500"}`}>
-              {classWon ? "BOSS BESIEGT!" : "TROODOS\nTRIUMPHIERT"}
+              {classWon ? "TROODOS BESIEGT!" : "TROODOS\nTRIUMPHIERT"}
             </h1>
             <p className="text-xl text-white/60 text-center mt-1">
               {classWon
-                ? "Die Klasse hat zusammengekämpft und gewonnen!"
+                ? "Die Klasse hat zusammen gekämpft und gezeigt wie schlau alle sind!"
                 : "Troodos war diesmal ein kleines bisschen schlauer..."}
             </p>
             {/* Stats */}
@@ -459,7 +502,7 @@ function BeamerContent() {
   const pct = responseCount ? Math.round((responseCount.answered / Math.max(responseCount.total, 1)) * 100) : 0;
 
   return (
-    <div className="flex flex-col min-h-screen bg-gray-900 text-white gap-4 p-6 relative overflow-hidden">
+    <div className={`flex flex-col min-h-screen bg-gray-900 text-white gap-4 p-6 relative overflow-hidden${quaking ? " quaking" : ""}`}>
       {/* Flickering beamer effect — each button has its own independent pattern */}
       {beamerMode === "BOSS" && (
         <style>{`
@@ -479,6 +522,22 @@ function BeamerContent() {
             0%,100% { opacity: 0.85; }
             50%     { opacity: 1; }
           }
+          @keyframes stamp-in {
+            0%   { transform: rotate(-8deg) scale(2.2); opacity: 0; }
+            55%  { transform: rotate(-8deg) scale(0.92); opacity: 1; }
+            75%  { transform: rotate(-8deg) scale(1.04); opacity: 1; }
+            100% { transform: rotate(-8deg) scale(1); opacity: 1; }
+          }
+          @keyframes quake {
+            0%,100% { transform: translate(0,0) rotate(0deg); }
+            15% { transform: translate(-5px,3px) rotate(-0.3deg); }
+            30% { transform: translate(5px,-3px) rotate(0.3deg); }
+            45% { transform: translate(-4px,2px) rotate(-0.2deg); }
+            60% { transform: translate(4px,-2px) rotate(0.2deg); }
+            75% { transform: translate(-2px,1px) rotate(-0.1deg); }
+            90% { transform: translate(2px,-1px) rotate(0.1deg); }
+          }
+          .quaking { animation: quake 0.5s ease-out; }
         `}</style>
       )}
       {ability === "FLICKERING_BEAMER" && !isRevealed && (
@@ -569,9 +628,24 @@ function BeamerContent() {
       )}
 
       {/* Question text */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-2">
+      <div className="flex-1 flex flex-col items-center justify-center gap-2 relative">
         <p className="text-4xl font-bold text-center leading-tight max-w-4xl">{question.text}</p>
         <p className="text-lg text-white/40 font-medium">{questionTypeHint(question.answerType)}</p>
+        {beamerMode === "BOSS" && stampVisible && ability && ability !== "NONE" && (
+          <div
+            className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none select-none z-10"
+            style={{ animation: "stamp-in 0.4s cubic-bezier(0.34,1.56,0.64,1) forwards" }}
+          >
+            <div
+              className="flex flex-col items-center gap-1 px-8 py-5 rounded-2xl border-[6px] border-yellow-400"
+              style={{ transform: "rotate(-8deg)", background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}
+            >
+              <span className="text-5xl">{abilityStampIcon(ability)}</span>
+              <span className="text-3xl font-black text-yellow-400 uppercase tracking-widest">{abilityLabel(ability)}</span>
+              <span className="text-xs text-yellow-400/50 font-bold uppercase tracking-wider">Boss-Fähigkeit</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* BLITZ lock overlay — shown while answers are hidden */}
@@ -721,6 +795,18 @@ function abilityLabel(ability: string): string {
     case "FLICKERING_BEAMER": return "Flackern";
     case "DANCING_BUZZERS": return "Tanz";
     default: return ability;
+  }
+}
+
+function abilityStampIcon(ability: string): string {
+  switch (ability) {
+    case "HIDDEN_ANSWER": return "❓";
+    case "HALF_TIME": return "⏰";
+    case "MIRROR_TEXT": return "🪞";
+    case "MOVING_BUTTONS": return "🌊";
+    case "FLICKERING_BEAMER": return "⚡";
+    case "DANCING_BUZZERS": return "💃";
+    default: return "⚡";
   }
 }
 
