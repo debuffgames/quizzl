@@ -486,7 +486,7 @@ function BeamerContent() {
       {/* Boss overlay */}
       {beamerMode === "BOSS" && bossState && (
         <div className="flex items-center gap-4 bg-black/40 rounded-2xl px-4 py-3">
-          <img src="/ch/troodos.png" alt="Troodos" className="h-24 w-auto object-contain select-none shrink-0 pointer-events-none" draggable={false} />
+          <img src="/ch/troodos.png" alt="Troodos" className="h-72 w-auto object-contain select-none shrink-0 pointer-events-none" draggable={false} />
           <div className="flex-1">
             <div className="flex items-center justify-between text-sm font-bold mb-1">
               <span className="text-red-400">👾 Boss</span>
@@ -560,9 +560,9 @@ function BeamerContent() {
       {/* Dino group — BOSS mode */}
       {beamerMode === "BOSS" && (
         <div className="flex items-end justify-center gap-3">
-          <img src="/ch/trizea.png" alt="Trizea" className="h-14 w-auto object-contain select-none pointer-events-none" draggable={false} />
-          <img src="/ch/parus.png" alt="Parus" className="h-20 w-auto object-contain select-none pointer-events-none" draggable={false} />
-          <img src="/ch/edo_solo.png" alt="Edo" className="h-14 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
       )}
 
@@ -765,7 +765,7 @@ function ShieldBattle({
             <img
               src={i === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
               alt={i === 0 ? "Edo" : "Parus"}
-              className="h-20 w-auto object-contain select-none mb-1 pointer-events-none"
+              className="h-60 w-auto object-contain select-none mb-1 pointer-events-none"
               draggable={false}
             />
             <p className="font-black text-base uppercase tracking-widest mb-1" style={{ color }}>{t?.name}</p>

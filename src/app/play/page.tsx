@@ -776,7 +776,7 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
           <img
             src={teamInfo.teamIndex === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
             alt={teamInfo.teamIndex === 0 ? "Edo" : "Parus"}
-            className="h-24 w-auto object-contain select-none pointer-events-none"
+            className="h-72 w-auto object-contain select-none pointer-events-none"
             draggable={false}
           />
           <span className="text-2xl font-black tracking-tight" style={{ color: teamColor }}>
@@ -796,9 +796,9 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
       )}
       {bossMode && (
         <div className="w-full max-w-sm mb-3 flex items-end justify-center gap-3">
-          <img src="/ch/trizea.png" alt="Trizea" className="h-16 w-auto object-contain select-none pointer-events-none" draggable={false} />
-          <img src="/ch/parus.png" alt="Parus" className="h-20 w-auto object-contain select-none pointer-events-none" draggable={false} />
-          <img src="/ch/edo_solo.png" alt="Edo" className="h-16 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/trizea.png" alt="Trizea" className="h-48 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/edo_solo.png" alt="Edo" className="h-48 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
       )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
