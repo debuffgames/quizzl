@@ -448,11 +448,11 @@ function BeamerContent() {
             )}
             {!classWon && bossResult.bossMaxHp != null && (
               <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-8 py-4 text-center mt-2 w-full max-w-sm">
-                <p className="text-red-300/70 text-sm font-semibold uppercase tracking-wider mb-2">Boss-HP beim Sieg</p>
+                <p className="text-red-300/70 text-sm font-semibold uppercase tracking-wider mb-2">Rätselkraft beim Sieg</p>
                 <div className="w-full bg-gray-700 rounded-full h-4 mb-2">
                   <div className="bg-red-500 h-4 rounded-full" style={{ width: `${Math.round(((bossResult.bossHpRemaining ?? 0) / Math.max(bossResult.bossMaxHp, 1)) * 100)}%` }} />
                 </div>
-                <p className="text-red-300 text-2xl font-black">{bossResult.bossHpRemaining} <span className="text-red-300/50 font-normal text-lg">/ {bossResult.bossMaxHp} HP</span></p>
+                <p className="text-red-300 text-2xl font-black">{bossResult.bossHpRemaining} <span className="text-red-300/50 font-normal text-lg">/ {bossResult.bossMaxHp} RK</span></p>
               </div>
             )}
           </div>
@@ -655,7 +655,7 @@ function BeamerContent() {
           <div className="flex-1">
             <div className="flex items-center justify-between text-sm font-bold mb-1">
               <span className="text-red-400">👾 Boss</span>
-              <span className="text-red-300">{bossState.hp} / {bossState.maxHp} HP</span>
+              <span className="text-red-300">{bossState.hp} / {bossState.maxHp} Rätselkraft</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-3">
               <div
@@ -814,8 +814,8 @@ function BeamerContent() {
             transform: `translate(-50%, 40vh) scale(${0.1 + 0.9 * bossChargeAnim.progress})`,
           }}
         >
-          <span className="text-4xl">⚔️</span>
-          <span className="font-black text-yellow-400 text-5xl">-{Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} HP</span>
+          <span className="text-4xl">⚡</span>
+          <span className="font-black text-yellow-400 text-5xl">-{Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} RK</span>
         </div>
       )}
       {/* Steal charge — grows at top (boss → players); visible for steal-only OR while queued alongside attack */}
@@ -842,9 +842,9 @@ function BeamerContent() {
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-20 whitespace-nowrap"
           style={{ animation: `${bossAnimTrigger.type === "attack" ? "fly-btt" : "fly-ttb"} 900ms ease-in-out forwards` }}
         >
-          <span className="text-4xl">{bossAnimTrigger.type === "attack" ? "⚔️" : "⏳"}</span>
+          <span className="text-4xl">{bossAnimTrigger.type === "attack" ? "⚡" : "⏳"}</span>
           <span className={`font-black text-5xl ${bossAnimTrigger.type === "attack" ? "text-yellow-400" : "text-red-400"}`}>
-            {bossAnimTrigger.type === "attack" ? `-${bossAnimTrigger.value} HP` : `-${bossAnimTrigger.value}s`}
+            {bossAnimTrigger.type === "attack" ? `-${bossAnimTrigger.value} RK` : `-${bossAnimTrigger.value}s`}
           </span>
         </div>
       )}
