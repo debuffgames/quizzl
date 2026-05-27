@@ -84,13 +84,13 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
         if (p.teamIndex !== null) {
           socket.emit(QUIZ_EVENTS.TEAM_ASSIGNED, {
             teamIndex: p.teamIndex,
-            teamName: p.teamIndex === 0 ? "Team Grün" : "Team Lila",
+            teamName: p.teamIndex === 0 ? "Team Grün" : "Team Orange",
           });
         }
         socket.emit(QUIZ_EVENTS.SHIELD_STATE, {
           teams: [
             { name: "Team Grün", hp: session.teamShields[0], maxHp: session.teamShieldMax ?? 1 },
-            { name: "Team Lila", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
+            { name: "Team Orange", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
           ],
         });
       }

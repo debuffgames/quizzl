@@ -1278,11 +1278,11 @@ function TeacherContent() {
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-3 py-2.5 space-y-1.5">
               {shieldState.teams.map((t) => (
                 <div key={t.name}>
-                  <div className="flex items-center justify-between text-xs font-semibold mb-0.5" style={{ color: t.name === "Team Grün" ? "#15803d" : "#7c3aed" }}>
+                  <div className="flex items-center justify-between text-xs font-semibold mb-0.5" style={{ color: t.name === "Team Grün" ? "#15803d" : "#c2410c" }}>
                     <span>{t.name}</span><span>{t.hp}/{t.maxHp}</span>
                   </div>
                   <div className="w-full bg-gray-200 rounded-full h-1.5">
-                    <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.max(0, Math.round((t.hp / Math.max(t.maxHp, 1)) * 100))}%`, backgroundColor: t.name === "Team Grün" ? "#22c55e" : "#8b5cf6" }} />
+                    <div className="h-1.5 rounded-full transition-all" style={{ width: `${Math.max(0, Math.round((t.hp / Math.max(t.maxHp, 1)) * 100))}%`, backgroundColor: t.name === "Team Grün" ? "#22c55e" : "#f97316" }} />
                   </div>
                 </div>
               ))}
@@ -1602,6 +1602,9 @@ function Layout({ children, reconnecting }: { children: React.ReactNode; reconne
           Verbindung unterbrochen – wird neu verbunden…
         </div>
       )}
+      <div className="px-4 pt-3 pb-1 shrink-0">
+        <img src="/quizzl_logo.png" alt="Quizzl" className="h-9 w-auto select-none" draggable={false} />
+      </div>
       {children}
     </div>
   );

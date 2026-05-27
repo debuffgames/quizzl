@@ -372,7 +372,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
     return (
-      <GameCard question={cardQ} timeLeft={null}>
+      <GameCard question={cardQ} timeLeft={null} showLogo>
         <div className="flex flex-col items-center gap-1 mb-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${correct ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
             {correct ? "✓" : "✗"}
@@ -423,7 +423,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
           Verbindung unterbrochen – wird neu verbunden…
         </div>
       )}
-      <GameCard question={cardQ} timeLeft={timeLeft}>
+      <GameCard question={cardQ} timeLeft={timeLeft} showLogo>
         <div className="flex flex-col gap-2.5">
           <div className="grid grid-cols-2 gap-2.5">
             {q.answers.map((a) => {
@@ -470,6 +470,7 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
   const [teamInfo, setTeamInfo] = useState<{ teamIndex: number; teamName: string } | null>(null);
   const [myTeamHp, setMyTeamHp] = useState<{ hp: number; maxHp: number } | null>(null);
   const [dancing, setDancing] = useState(false);
+  const [bossMode, setBossMode] = useState(false);
   const teamInfoRef = useRef<{ teamIndex: number; teamName: string } | null>(null);
   useEffect(() => { teamInfoRef.current = teamInfo; }, [teamInfo]);
 
@@ -547,6 +548,7 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
       if (myTeam) setMyTeamHp({ hp: myTeam.hp, maxHp: myTeam.maxHp });
     };
     const onBossState = (data: { ability?: string | null }) => {
+      setBossMode(true);
       setDancing(data.ability === "DANCING_BUZZERS");
     };
     const onPause = () => {
@@ -699,7 +701,7 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
   const cardQ: CardQuestion = { text: question.text, index: question.index, total: question.total };
 
   return (
-    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp}>
+    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}>
       {phase === "answered" ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6">
           <Spinner />
@@ -752,18 +754,29 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
 
 // ─── Shared layout components ─────────────────────────────────────────────────
 
-function GameCard({ children, question, timeLeft, teamInfo, myTeamHp }: {
+function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, showLogo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
   teamInfo?: { teamIndex: number; teamName: string } | null;
   myTeamHp?: { hp: number; maxHp: number } | null;
+  bossMode?: boolean;
+  showLogo?: boolean;
 }) {
-  const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#8b5cf6";
+  const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#f97316";
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6" style={teamInfo ? { borderTop: `6px solid ${teamColor}` } : undefined}>
+      {showLogo && !teamInfo && !bossMode && (
+        <img src="/quizzl_logo.png" alt="Quizzl" className="w-full max-w-sm mb-4 px-8 select-none" draggable={false} />
+      )}
       {teamInfo && (
         <div className="w-full max-w-sm mb-3 flex flex-col items-center gap-1">
+          <img
+            src={teamInfo.teamIndex === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
+            alt={teamInfo.teamIndex === 0 ? "Edo" : "Parus"}
+            className="h-24 w-auto object-contain select-none pointer-events-none"
+            draggable={false}
+          />
           <span className="text-2xl font-black tracking-tight" style={{ color: teamColor }}>
             {teamInfo.teamName}
           </span>
@@ -777,6 +790,13 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp }: {
               </div>
             </div>
           )}
+        </div>
+      )}
+      {bossMode && (
+        <div className="w-full max-w-sm mb-3 flex items-end justify-center gap-3">
+          <img src="/ch/trizea.png" alt="Trizea" className="h-16 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/parus.png" alt="Parus" className="h-20 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/edo_solo.png" alt="Edo" className="h-16 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
       )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">

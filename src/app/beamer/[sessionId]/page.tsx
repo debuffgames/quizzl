@@ -334,7 +334,7 @@ function BeamerContent() {
     }
 
     if (shieldResult) {
-      const winnerColor = shieldResult.winner === "Team Grün" ? "#22c55e" : "#8b5cf6";
+      const winnerColor = shieldResult.winner === "Team Grün" ? "#22c55e" : "#f97316";
       return (
         <div className="flex flex-col min-h-screen bg-gray-900 text-white p-8 gap-8">
           {/* Hero */}
@@ -347,7 +347,7 @@ function BeamerContent() {
             {/* Shield bars */}
             <div className="w-full max-w-md mt-4 space-y-4">
               {shieldResult.shieldFinal.map((t) => {
-                const color = t.name === "Team Grün" ? "#22c55e" : "#8b5cf6";
+                const color = t.name === "Team Grün" ? "#22c55e" : "#f97316";
                 const isWinner = t.name === shieldResult.winner;
                 return (
                   <div key={t.name} className={`rounded-2xl px-5 py-4 ${isWinner ? "bg-white/10" : "bg-white/5"}`} style={isWinner ? { outline: `2px solid ${color}` } : undefined}>
@@ -446,6 +446,7 @@ function BeamerContent() {
       {/* Boss overlay */}
       {beamerMode === "BOSS" && bossState && (
         <div className="flex items-center gap-4 bg-black/40 rounded-2xl px-4 py-3">
+          <img src="/ch/troodos.png" alt="Troodos" className="h-24 w-auto object-contain select-none shrink-0 pointer-events-none" draggable={false} />
           <div className="flex-1">
             <div className="flex items-center justify-between text-sm font-bold mb-1">
               <span className="text-red-400">👾 Boss</span>
@@ -512,6 +513,15 @@ function BeamerContent() {
       {speedMode === "BLITZ" && !isRevealed && !answersVisible && (
         <div className="text-center py-4">
           <p className="text-white/50 text-2xl font-semibold">🔒 Antworten noch verborgen</p>
+        </div>
+      )}
+
+      {/* Dino group — BOSS mode */}
+      {beamerMode === "BOSS" && (
+        <div className="flex items-end justify-center gap-3">
+          <img src="/ch/trizea.png" alt="Trizea" className="h-14 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/parus.png" alt="Parus" className="h-20 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/edo_solo.png" alt="Edo" className="h-14 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
       )}
 
@@ -600,7 +610,7 @@ function abilityLabel(ability: string): string {
   }
 }
 
-const SHIELD_COLORS = ["#22c55e", "#8b5cf6"] as const;
+const SHIELD_COLORS = ["#22c55e", "#f97316"] as const;
 
 function ShieldBattle({
   teams,
@@ -690,6 +700,12 @@ function ShieldBattle({
               animation: isHit ? "shield-bash 0.45s ease-out" : "none",
             }}
           >
+            <img
+              src={i === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
+              alt={i === 0 ? "Edo" : "Parus"}
+              className="h-20 w-auto object-contain select-none mb-1 pointer-events-none"
+              draggable={false}
+            />
             <p className="font-black text-base uppercase tracking-widest mb-1" style={{ color }}>{t?.name}</p>
             <p
               className="font-black tabular-nums leading-none"

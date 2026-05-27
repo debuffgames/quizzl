@@ -398,12 +398,12 @@ async function revealAnswer(io: Server, session: LiveSession, sessionManager: Se
   if (session.beamerMode === "TEAM_SHIELD" && session.teamShields) {
     const loserIdx = session.teamShields.findIndex((hp) => hp <= 0);
     if (loserIdx >= 0) {
-      const winner = loserIdx === 0 ? "Team Lila" : "Team Grün";
+      const winner = loserIdx === 0 ? "Team Orange" : "Team Grün";
       session.pendingEnd = {
         winner, winType: "shield",
         shieldFinal: [
           { name: "Team Grün", hp: session.teamShields[0], maxHp: session.teamShieldMax ?? 1 },
-          { name: "Team Lila", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
+          { name: "Team Orange", hp: session.teamShields[1], maxHp: session.teamShieldMax ?? 1 },
         ],
       };
       if (session.teacherSocketId) {
@@ -484,7 +484,7 @@ export function sendShieldState(io: Server, session: LiveSession) {
   const state = {
     teams: [
       { name: "Team Grün", hp: session.teamShields?.[0] ?? 0, maxHp: session.teamShieldMax ?? 1 },
-      { name: "Team Lila", hp: session.teamShields?.[1] ?? 0, maxHp: session.teamShieldMax ?? 1 },
+      { name: "Team Orange", hp: session.teamShields?.[1] ?? 0, maxHp: session.teamShieldMax ?? 1 },
     ],
   };
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.SHIELD_STATE, state);
@@ -507,7 +507,7 @@ function initTeams(io: Server, session: LiveSession, totalQuestions: number, avg
     if (sock) {
       sock.emit(QUIZ_EVENTS.TEAM_ASSIGNED, {
         teamIndex: p.teamIndex,
-        teamName: p.teamIndex === 0 ? "Team Grün" : "Team Lila",
+        teamName: p.teamIndex === 0 ? "Team Grün" : "Team Orange",
       });
     }
   });
