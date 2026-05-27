@@ -68,7 +68,7 @@ type Init =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "autonomous"; questions: FullQuestion[]; socket: Socket }
-  | { status: "beamer"; socket: Socket };
+  | { status: "beamer"; socket: Socket; beamerMode: string };
 
 function PlayContent() {
   const searchParams = useSearchParams();
@@ -108,7 +108,7 @@ function PlayContent() {
 
       socket.on("connect", () => {
         setReconnecting(false);
-        socket.emit(QUIZ_EVENTS.JOIN, { lobbyId, token }, async (ack: { ok: boolean; gameMode?: string; error?: string }) => {
+        socket.emit(QUIZ_EVENTS.JOIN, { lobbyId, token }, async (ack: { ok: boolean; gameMode?: string; beamerMode?: string; error?: string }) => {
           if (!ack.ok) {
             if (!hasJoinedRef.current) setInit({ status: "error", message: ack.error ?? "Beitreten fehlgeschlagen" });
             return;
@@ -131,7 +131,7 @@ function PlayContent() {
               setInit({ status: "error", message: "Quiz konnte nicht geladen werden" });
             }
           } else {
-            setReady({ status: "beamer", socket });
+            setReady({ status: "beamer", socket, beamerMode: ack.beamerMode ?? "STANDARD" });
           }
         });
       });
@@ -159,7 +159,7 @@ function PlayContent() {
     return <AutonomousPlay questions={init.questions} socket={init.socket} reconnecting={reconnecting} />;
   }
 
-  return <BeamerPlay socket={init.socket} reconnecting={reconnecting} />;
+  return <BeamerPlay socket={init.socket} reconnecting={reconnecting} initialBeamerMode={init.beamerMode} />;
 }
 
 // ─── AUTONOMOUS mode — fully client-side ──────────────────────────────────────
@@ -458,7 +458,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
 
 // ─── BEAMER mode — server-controlled ──────────────────────────────────────────
 
-function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: boolean }) {
+function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socket; reconnecting: boolean; initialBeamerMode: string }) {
   type BeamerPhase = "waiting" | "question" | "answered" | "revealed" | "scoreboard" | "ended" | "paused";
   const [phase, setPhase] = useState<BeamerPhase>("waiting");
   const [question, setQuestion] = useState<BeamerQuestion | null>(null);
@@ -623,7 +623,7 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
   );
 
   if (phase === "waiting") return (
-    <Shell><Spinner /><p className="mt-4 text-gray-500 text-sm">Warte auf nächste Frage...</p></Shell>
+    <ModeStartScreen beamerMode={initialBeamerMode} teamInfo={teamInfo} />
   );
 
   if (phase === "ended") return (
@@ -830,6 +830,60 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
         <div className="px-5 pb-5 flex-1">{children}</div>
       </div>
     </div>
+  );
+}
+
+function ModeStartScreen({ beamerMode, teamInfo }: {
+  beamerMode: string;
+  teamInfo: { teamIndex: number; teamName: string } | null;
+}) {
+  const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#f97316";
+
+  if (beamerMode === "BOSS") {
+    return (
+      <Shell>
+        <img src="/quizzl_logo.png" alt="Quizzl" className="w-36 mb-5 select-none" draggable={false} />
+        <h1 className="text-xl font-black text-gray-900 mb-4">Boss-Kampf</h1>
+        <img src="/ch/troodos.png" alt="Troodos" className="h-44 w-auto object-contain mb-5 select-none pointer-events-none" draggable={false} />
+        <p className="text-gray-600 text-sm text-center leading-relaxed max-w-xs">
+          Troodos denkt, er wäre der schlauste Dino der Welt.<br />
+          Du spielst im Team mit allen anderen.<br />
+          Beantworte Fragen korrekt um Troodos zu zeigen, wer schlauer ist!
+        </p>
+      </Shell>
+    );
+  }
+
+  if (beamerMode === "TEAM_SHIELD") {
+    return (
+      <Shell>
+        <img src="/quizzl_logo.png" alt="Quizzl" className="w-36 mb-5 select-none" draggable={false} />
+        <h1 className="text-xl font-black text-gray-900 mb-4">Team-Modus</h1>
+        <div className="flex items-end gap-2 mb-5">
+          <img src="/ch/edo_solo.png" alt="Team Grün" className="h-32 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          <img src="/ch/parus.png" alt="Team Orange" className="h-32 w-auto object-contain select-none pointer-events-none" draggable={false} />
+        </div>
+        <p className="text-gray-600 text-sm text-center leading-relaxed max-w-xs">
+          Team Grün und Team Orange treten gegeneinander an.
+          {teamInfo ? (
+            <> Du bist in <span className="font-black" style={{ color: teamColor }}>{teamInfo.teamName}</span>.</>
+          ) : null}
+          <br />Beantworte Fragen korrekt um dein Team zu unterstützen!
+        </p>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <img src="/quizzl_logo.png" alt="Quizzl" className="w-36 mb-5 select-none" draggable={false} />
+      <h1 className="text-xl font-black text-gray-900 mb-4">Quizzl</h1>
+      <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain mb-5 select-none pointer-events-none" draggable={false} />
+      <p className="text-gray-600 text-sm text-center leading-relaxed max-w-xs">
+        Alle Spieler treten gegeneinander an.<br />
+        Beantworte Fragen korrekt um möglichst viele Punkte zu sammeln!
+      </p>
+    </Shell>
   );
 }
 

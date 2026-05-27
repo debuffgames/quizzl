@@ -9,7 +9,7 @@ const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
 
 export function registerSessionHandlers(io: Server, socket: Socket, sessionManager: SessionManager) {
   // Student joins a quiz session
-  socket.on(QUIZ_EVENTS.JOIN, async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; error?: string; gameMode?: string }) => void) => {
+  socket.on(QUIZ_EVENTS.JOIN, async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; error?: string; gameMode?: string; beamerMode?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "student") {
       ack?.({ ok: false, error: "Ungültiger Token" });
@@ -69,7 +69,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       });
     }
 
-    ack?.({ ok: true, gameMode: session.gameMode });
+    ack?.({ ok: true, gameMode: session.gameMode, beamerMode: session.beamerMode });
 
     // Send current state if session is already active
     if (session.currentQuestionIndex >= 0) {

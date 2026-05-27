@@ -64,6 +64,7 @@ function BeamerContent() {
   const [shieldResult, setShieldResult] = useState<ShieldResult | null>(null);
   const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
   const [bossAnimTrigger, setBossAnimTrigger] = useState<{ type: "attack" | "steal"; value: number; key: number } | null>(null);
+  const [bossChargeAnim, setBossChargeAnim] = useState<{ type: "attack" | "steal"; finalValue: number; progress: number; key: number } | null>(null);
 
   const [reconnecting, setReconnecting] = useState(false);
 
@@ -73,6 +74,7 @@ function BeamerContent() {
   const prevShieldHpRef = useRef<[number, number] | null>(null);
   const prevBossHpRef = useRef<number | null>(null);
   const prevBossTimerEndRef = useRef<number | null>(null);
+  const bossChargeRafRef = useRef<number | null>(null);
   const shieldStateRef = useRef<ShieldState | null>(null);
   useEffect(() => { shieldStateRef.current = shieldState; }, [shieldState]);
 
@@ -81,6 +83,29 @@ function BeamerContent() {
     const id = setTimeout(() => setBossAnimTrigger(null), 1200);
     return () => clearTimeout(id);
   }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!bossChargeAnim) return;
+    if (bossChargeRafRef.current) cancelAnimationFrame(bossChargeRafRef.current);
+    const CHARGE_MS = 3000;
+    const startTime = Date.now();
+    const { type, finalValue, key } = bossChargeAnim;
+    const rafRef = { current: 0 };
+    const tick = () => {
+      const progress = Math.min(1, (Date.now() - startTime) / CHARGE_MS);
+      setBossChargeAnim((prev) => prev?.key === key ? { ...prev, progress } : prev);
+      if (progress < 1) {
+        rafRef.current = requestAnimationFrame(tick);
+        bossChargeRafRef.current = rafRef.current;
+      } else {
+        setBossChargeAnim(null);
+        setBossAnimTrigger({ type, value: finalValue, key: key + 1 });
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    bossChargeRafRef.current = rafRef.current;
+    return () => { cancelAnimationFrame(rafRef.current); };
+  }, [bossChargeAnim?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refs so the keyboard handler always reads current state without stale closures
   const phaseRef = useRef(phase);
@@ -125,6 +150,7 @@ function BeamerContent() {
     setBossResult(null);
     setShieldResult(null);
     setBossAnimTrigger(null);
+    setBossChargeAnim(null);
     prevBossHpRef.current = null;
     prevBossTimerEndRef.current = null;
     if (bm) setBeamerMode(bm);
@@ -191,9 +217,9 @@ function BeamerContent() {
         prevBossHpRef.current = data.hp;
         prevBossTimerEndRef.current = data.timerEnd;
         if (prevHp !== null && data.hp < prevHp) {
-          setBossAnimTrigger({ type: "attack", value: prevHp - data.hp, key: Date.now() });
+          setBossChargeAnim({ type: "attack", finalValue: prevHp - data.hp, progress: 0, key: Date.now() });
         } else if (prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000) {
-          setBossAnimTrigger({ type: "steal", value: Math.round((prevTimerEnd - data.timerEnd) / 1000), key: Date.now() });
+          setBossChargeAnim({ type: "steal", finalValue: Math.round((prevTimerEnd - data.timerEnd) / 1000), progress: 0, key: Date.now() });
         }
         setBossState(data);
         setBeamerMode("BOSS");
@@ -449,6 +475,10 @@ function BeamerContent() {
             88%  { transform: translate(-50%, 28vh) scale(1);    opacity: 1; }
             100% { transform: translate(-50%, 40vh) scale(0.5);  opacity: 0; }
           }
+          @keyframes charge-pulse {
+            0%,100% { opacity: 0.85; }
+            50%     { opacity: 1; }
+          }
         `}</style>
       )}
       {ability === "FLICKERING_BEAMER" && !isRevealed && (
@@ -621,6 +651,24 @@ function BeamerContent() {
         </div>
       )}
 
+      {/* Boss battle charge — builds up at origin for 3 s before flying */}
+      {bossChargeAnim && (
+        <div
+          className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-20 whitespace-nowrap"
+          style={{
+            animation: "charge-pulse 0.6s ease-in-out infinite",
+            transform: `translate(-50%, ${bossChargeAnim.type === "attack" ? "40vh" : "-40vh"}) scale(${0.1 + 0.9 * bossChargeAnim.progress})`,
+          }}
+        >
+          <span className="text-4xl">{bossChargeAnim.type === "attack" ? "⚔️" : "⏳"}</span>
+          <span className={`font-black text-5xl ${bossChargeAnim.type === "attack" ? "text-yellow-400" : "text-red-400"}`}>
+            {bossChargeAnim.type === "attack"
+              ? `-${Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} HP`
+              : `-${Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)}s`}
+          </span>
+        </div>
+      )}
+
       {/* Boss battle projectile */}
       {bossAnimTrigger && (
         <div
@@ -682,6 +730,10 @@ function ShieldBattle({
   animTrigger: { preHp: [number, number]; postHp: [number, number]; key: number } | null;
 }) {
   const [overrideHp, setOverrideHp] = useState<[number, number] | null>(null);
+  const [charging, setCharging] = useState(false);
+  const [chargeVals, setChargeVals] = useState<{ v0: number; v1: number; max0: number; max1: number; progress: number }>({
+    v0: 0, v1: 0, max0: 0, max1: 0, progress: 0,
+  });
   const [proj, setProj] = useState<{ dir: 0 | 1; damage: number } | null>(null);
   const [hitTeam, setHitTeam] = useState<0 | 1 | null>(null);
 
@@ -690,37 +742,51 @@ function ShieldBattle({
   useEffect(() => {
     if (!animTrigger) return;
     const { preHp, postHp } = animTrigger;
-    const dmgTo1 = Math.max(0, preHp[1] - postHp[1]); // team0's correct answers → team1 takes this
-    const dmgTo0 = Math.max(0, preHp[0] - postHp[0]); // team1's correct answers → team0 takes this
+    const dmgTo1 = Math.max(0, preHp[1] - postHp[1]);
+    const dmgTo0 = Math.max(0, preHp[0] - postHp[0]);
 
-    setOverrideHp([...preHp]);
+    setOverrideHp([...preHp] as [number, number]);
     setProj(null);
     setHitTeam(null);
+    setCharging(true);
+    setChargeVals({ v0: 0, v1: 0, max0: dmgTo1, max1: dmgTo0, progress: 0 });
 
-    const ids: ReturnType<typeof setTimeout>[] = [];
-    let t = 350;
+    const CHARGE_MS = 3000;
+    const startTime = Date.now();
+    const rafRef = { current: 0 };
+    const timeoutIds: ReturnType<typeof setTimeout>[] = [];
 
-    if (dmgTo1 > 0) {
-      ids.push(setTimeout(() => setProj({ dir: 0, damage: dmgTo1 }), t));
-      t += 800;
-      ids.push(setTimeout(() => { setProj(null); setHitTeam(1); setOverrideHp([preHp[0], postHp[1]]); }, t));
-      t += 550;
-      ids.push(setTimeout(() => setHitTeam(null), t));
-      t += 350;
-    }
+    const tick = () => {
+      const progress = Math.min(1, (Date.now() - startTime) / CHARGE_MS);
+      setChargeVals({ v0: Math.round(dmgTo1 * progress), v1: Math.round(dmgTo0 * progress), max0: dmgTo1, max1: dmgTo0, progress });
+      if (progress < 1) { rafRef.current = requestAnimationFrame(tick); return; }
 
-    if (dmgTo0 > 0) {
-      ids.push(setTimeout(() => setProj({ dir: 1, damage: dmgTo0 }), t));
-      t += 800;
-      ids.push(setTimeout(() => { setProj(null); setHitTeam(0); setOverrideHp([postHp[0], postHp[1]]); }, t));
-      t += 550;
-      ids.push(setTimeout(() => { setHitTeam(null); setOverrideHp(null); }, t));
-    } else {
-      ids.push(setTimeout(() => setOverrideHp(null), t));
-    }
+      setCharging(false);
+      let t = 0;
+      if (dmgTo1 > 0) {
+        timeoutIds.push(setTimeout(() => setProj({ dir: 0, damage: dmgTo1 }), t));
+        t += 800;
+        timeoutIds.push(setTimeout(() => { setProj(null); setHitTeam(1); setOverrideHp([preHp[0], postHp[1]] as [number, number]); }, t));
+        t += 550;
+        timeoutIds.push(setTimeout(() => setHitTeam(null), t));
+        t += 350;
+      }
+      if (dmgTo0 > 0) {
+        timeoutIds.push(setTimeout(() => setProj({ dir: 1, damage: dmgTo0 }), t));
+        t += 800;
+        timeoutIds.push(setTimeout(() => { setProj(null); setHitTeam(0); setOverrideHp([postHp[0], postHp[1]] as [number, number]); }, t));
+        t += 550;
+        timeoutIds.push(setTimeout(() => { setHitTeam(null); setOverrideHp(null); }, t));
+      } else {
+        timeoutIds.push(setTimeout(() => setOverrideHp(null), t));
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
 
-    return () => ids.forEach(clearTimeout);
+    return () => { cancelAnimationFrame(rafRef.current); timeoutIds.forEach(clearTimeout); };
   }, [animTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const chargeScale = 0.1 + 0.9 * chargeVals.progress;
 
   return (
     <div className="relative flex rounded-2xl overflow-hidden" style={{ minHeight: 180, background: "rgba(0,0,0,0.35)" }}>
@@ -744,6 +810,10 @@ function ShieldBattle({
           60%     { transform: translateX(5px); }
           80%     { transform: translateX(-3px); }
         }
+        @keyframes charge-pulse {
+          0%,100% { opacity: 0.85; }
+          50%     { opacity: 1; }
+        }
       `}</style>
 
       {[0, 1].map((i) => {
@@ -752,13 +822,14 @@ function ShieldBattle({
         const hp = displayHp[i];
         const pct = Math.max(0, Math.round((hp / Math.max(t?.maxHp ?? 1, 1)) * 100));
         const isHit = hitTeam === i;
+        const isCharging = charging && (i === 0 ? chargeVals.max0 > 0 : chargeVals.max1 > 0);
         return (
           <div
             key={i}
             className="flex-1 flex flex-col items-center justify-center py-5 px-6 transition-[background,box-shadow] duration-200"
             style={{
-              background: isHit ? `${color}35` : `${color}14`,
-              boxShadow: isHit ? `inset 0 0 50px ${color}50` : "none",
+              background: isHit ? `${color}35` : isCharging ? `${color}22` : `${color}14`,
+              boxShadow: isHit ? `inset 0 0 50px ${color}50` : isCharging ? `inset 0 0 25px ${color}35` : "none",
               animation: isHit ? "shield-bash 0.45s ease-out" : "none",
             }}
           >
@@ -769,18 +840,12 @@ function ShieldBattle({
               draggable={false}
             />
             <p className="font-black text-base uppercase tracking-widest mb-1" style={{ color }}>{t?.name}</p>
-            <p
-              className="font-black tabular-nums leading-none"
-              style={{ color, fontSize: "5rem", textShadow: `0 0 40px ${color}90` }}
-            >
+            <p className="font-black tabular-nums leading-none" style={{ color, fontSize: "5rem", textShadow: `0 0 40px ${color}90` }}>
               {hp}
             </p>
             <p className="text-white/25 text-xs mt-0.5">/ {t?.maxHp} HP</p>
             <div className="w-full bg-gray-700/50 rounded-full mt-3" style={{ height: 10 }}>
-              <div
-                className="rounded-full transition-all duration-500"
-                style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }}
-              />
+              <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
             </div>
           </div>
         );
@@ -789,7 +854,27 @@ function ShieldBattle({
       {/* Center line */}
       <div className="absolute inset-y-0 left-1/2 w-px bg-white/10 -translate-x-1/2 pointer-events-none" />
 
-      {/* Projectile */}
+      {/* Charging indicators — both appear simultaneously, grow over 3 s */}
+      {charging && chargeVals.max0 > 0 && (
+        <div
+          className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
+          style={{ animation: "charge-pulse 0.6s ease-in-out infinite", transform: `translate(calc(-50% - 180px), -50%) scale(${chargeScale})` }}
+        >
+          <span className="text-4xl">⚔️</span>
+          <span className="font-black text-white text-5xl">-{chargeVals.v0}</span>
+        </div>
+      )}
+      {charging && chargeVals.max1 > 0 && (
+        <div
+          className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
+          style={{ animation: "charge-pulse 0.6s ease-in-out infinite", transform: `translate(calc(-50% + 180px), -50%) scale(${chargeScale})` }}
+        >
+          <span className="text-4xl">⚔️</span>
+          <span className="font-black text-white text-5xl">-{chargeVals.v1}</span>
+        </div>
+      )}
+
+      {/* Flying projectile */}
       {proj ? (
         <div
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
@@ -798,9 +883,9 @@ function ShieldBattle({
           <span className="text-4xl">⚔️</span>
           <span className="font-black text-white text-5xl">-{proj.damage}</span>
         </div>
-      ) : (
+      ) : !charging ? (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/15 font-black text-3xl pointer-events-none select-none">VS</div>
-      )}
+      ) : null}
     </div>
   );
 }
