@@ -1023,7 +1023,7 @@ function ShieldBattle({
             <p className="font-black tabular-nums leading-none" style={{ color, fontSize: "5rem", textShadow: `0 0 40px ${color}90` }}>
               {hp}
             </p>
-            <p className="text-white/25 text-xs mt-0.5">/ {t?.maxHp} HP</p>
+            <p className="text-white/25 text-xs mt-0.5">/ {t?.maxHp} Schildenergie</p>
             <div className="w-full bg-gray-700/50 rounded-full mt-3" style={{ height: 10 }}>
               <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
             </div>
@@ -1040,7 +1040,7 @@ function ShieldBattle({
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
           style={{ animation: "charge-pulse 0.6s ease-in-out infinite", transform: `translate(calc(-50% - 180px), -50%) scale(${chargeScale})` }}
         >
-          <span className="text-4xl">⚔️</span>
+          <span className="text-4xl">⚡</span>
           <span className="font-black text-white text-5xl">-{chargeVals.v0}</span>
         </div>
       )}
@@ -1049,7 +1049,7 @@ function ShieldBattle({
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
           style={{ animation: "charge-pulse 0.6s ease-in-out infinite", transform: `translate(calc(-50% + 180px), -50%) scale(${chargeScale})` }}
         >
-          <span className="text-4xl">⚔️</span>
+          <span className="text-4xl">⚡</span>
           <span className="font-black text-white text-5xl">-{chargeVals.v1}</span>
         </div>
       )}
@@ -1060,7 +1060,7 @@ function ShieldBattle({
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
           style={{ animation: `${proj.dir === 0 ? "fly-ltr" : "fly-rtl"} 800ms ease-in-out forwards` }}
         >
-          <span className="text-4xl">⚔️</span>
+          <span className="text-4xl">⚡</span>
           <span className="font-black text-white text-5xl">-{proj.damage}</span>
         </div>
       ) : !chargeVisible[0] && !chargeVisible[1] ? (
