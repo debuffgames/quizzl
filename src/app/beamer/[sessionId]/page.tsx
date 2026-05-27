@@ -537,12 +537,6 @@ function BeamerContent() {
               <div className="mt-2 h-[26px]" />
             )}
           </div>
-          <div className="text-center min-w-[80px]">
-            <p className="text-xs text-white/50 mb-0.5">Zeit</p>
-            <p className={`text-2xl font-black tabular-nums ${(bossState.timerEnd - nowTick) < 60000 ? "text-red-400 animate-pulse" : "text-white"}`}>
-              {formatTimer(Math.max(0, bossState.timerEnd - nowTick))}
-            </p>
-          </div>
         </div>
       )}
 
@@ -587,12 +581,22 @@ function BeamerContent() {
         </div>
       )}
 
-      {/* Dino group — BOSS mode */}
+      {/* Dino group + timer — BOSS mode */}
       {beamerMode === "BOSS" && (
-        <div className="flex items-end justify-center">
-          <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
-          <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
-          <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -ml-6" draggable={false} />
+        <div className="flex items-end justify-center gap-8">
+          <div className="flex items-end justify-center">
+            <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
+            <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
+            <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -ml-6" draggable={false} />
+          </div>
+          {bossState && (
+            <div className="flex flex-col items-center justify-end pb-2 shrink-0">
+              <p className="text-white/40 text-sm font-semibold uppercase tracking-wider mb-1">Verbleibende Zeit</p>
+              <p className={`font-black tabular-nums leading-none ${(bossState.timerEnd - nowTick) < 60000 ? "text-red-400 animate-pulse" : "text-white"}`} style={{ fontSize: "4.5rem" }}>
+                {formatTimer(Math.max(0, bossState.timerEnd - nowTick))}
+              </p>
+            </div>
+          )}
         </div>
       )}
 
