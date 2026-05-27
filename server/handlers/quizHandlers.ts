@@ -475,6 +475,7 @@ export function sendBossState(io: Server, session: LiveSession) {
     threshold: Math.max(1, Math.ceil(session.participants.size / 4)),
   };
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.BOSS_STATE, state);
+  io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.BOSS_STATE, state);
   if (session.teacherSocketId) {
     io.to(session.teacherSocketId).emit(QUIZ_EVENTS.BOSS_STATE, state);
   }

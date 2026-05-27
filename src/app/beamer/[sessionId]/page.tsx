@@ -559,10 +559,10 @@ function BeamerContent() {
 
       {/* Dino group — BOSS mode */}
       {beamerMode === "BOSS" && (
-        <div className="flex items-end justify-center gap-3">
-          <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none" draggable={false} />
-          <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none" draggable={false} />
-          <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none" draggable={false} />
+        <div className="flex items-end justify-center">
+          <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
+          <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
+          <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -ml-6" draggable={false} />
         </div>
       )}
 
