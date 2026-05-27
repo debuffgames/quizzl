@@ -396,7 +396,10 @@ function BeamerContent() {
         <div className={`flex flex-col min-h-screen ${classWon ? "bg-gray-900" : "bg-gray-950"} text-white p-8 gap-8`}>
           {/* Hero */}
           <div className="flex flex-col items-center gap-4 pt-4">
-            <p className="text-8xl">{classWon ? "⚔️" : "💀"}</p>
+            {classWon
+              ? <p className="text-8xl">⚔️</p>
+              : <img src="/ch/troodos.png" alt="Troodos" className="h-64 w-auto object-contain select-none pointer-events-none" draggable={false} />
+            }
             <h1 className={`text-6xl font-black text-center leading-tight ${classWon ? "text-yellow-400" : "text-red-500"}`}>
               {classWon ? "TROODOS BESIEGT!" : "TROODOS\nTRIUMPHIERT"}
             </h1>
