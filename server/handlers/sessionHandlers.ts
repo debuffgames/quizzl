@@ -147,11 +147,25 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       });
     }
 
+    const isNewTeacher = session.teacherSocketId === null;
+
     sessionManager.setTeacherSocket(session.sessionId, socket.id);
     socket.join(session.sessionId);
     socket.join(`${session.sessionId}:teacher`);
 
     ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode, beamerMode: session.beamerMode, speedMode: session.speedMode, bossTimerSeconds: session.bossTimerSeconds ?? undefined });
+
+    // On first teacher join for a not-yet-started session, reset any lingering beamer
+    // state (e.g. previous BOSS session still on screen)
+    if (isNewTeacher && session.currentQuestionIndex === -1) {
+      const beamerSocketId = sessionManager.getLobbyBeamerSocket(session.lobbyId);
+      if (beamerSocketId) {
+        io.to(beamerSocketId).emit(QUIZ_EVENTS.SESSION_STARTED, {
+          beamerMode: session.beamerMode,
+          speedMode: session.speedMode,
+        });
+      }
+    }
 
     // If session is already active, send the current question to the teacher
     if (session.currentQuestionIndex >= 0) {

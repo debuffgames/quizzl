@@ -452,8 +452,11 @@ function TeacherContent() {
         hasTeacherJoinedRef.current = true;
         if (!isReconnect) {
           if (ack.gameMode === "BEAMER" || ack.gameMode === "AUTONOMOUS") setGameMode(ack.gameMode);
-          if (ack.beamerMode === "TEAM_SHIELD" || ack.beamerMode === "BOSS") setBeamerMode(ack.beamerMode);
-          if (ack.speedMode === "BLITZ" || ack.speedMode === "SUPER_BLITZ") setSpeedMode(ack.speedMode);
+          setBeamerMode((ack.beamerMode as BeamerMode | undefined) ?? "STANDARD");
+          setSpeedMode((ack.speedMode as SpeedMode | undefined) ?? "NORMAL");
+          setBossState(null);
+          setShieldState(null);
+          setPendingEnd(false);
           setPhase(initialPhase);
         }
       });
