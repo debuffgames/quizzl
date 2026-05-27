@@ -338,12 +338,12 @@ function BeamerContent() {
           <div className="flex flex-col items-center gap-4 pt-4">
             <p className="text-8xl">{classWon ? "⚔️" : "💀"}</p>
             <h1 className={`text-6xl font-black text-center leading-tight ${classWon ? "text-yellow-400" : "text-red-500"}`}>
-              {classWon ? "BOSS BESIEGT!" : "DER BOSS\nTRIUMPHIERT"}
+              {classWon ? "BOSS BESIEGT!" : "TROODOS\nTRIUMPHIERT"}
             </h1>
             <p className="text-xl text-white/60 text-center mt-1">
               {classWon
                 ? "Die Klasse hat zusammengekämpft und gewonnen!"
-                : "Der Boss war diesmal zu mächtig... Beim nächsten Mal!"}
+                : "Troodos war diesmal ein kleines bisschen schlauer..."}
             </p>
             {/* Stats */}
             {classWon && bossResult.bossTotalMs != null && (
