@@ -89,13 +89,11 @@ function BeamerContent() {
     if (!bossAnimTrigger) return;
     // Trigger boss hit bash animation ~750 ms in (when projectile is nearly there)
     let hitId: ReturnType<typeof setTimeout> | undefined;
-    if (bossAnimTrigger.type === "attack") {
-      hitId = setTimeout(() => {
-        setBossHit(true);
-        setQuaking(true);
-        setTimeout(() => setQuaking(false), 500);
-      }, 750);
-    }
+    hitId = setTimeout(() => {
+      if (bossAnimTrigger.type === "attack") setBossHit(true);
+      setQuaking(true);
+      setTimeout(() => setQuaking(false), 500);
+    }, 750);
     const id = setTimeout(() => {
       setBossAnimTrigger(null);
       setBossHit(false);
