@@ -50,6 +50,7 @@ interface TopScore {
 
 interface CardQuestion {
   text?: string;
+  answerType?: string;
   index: number;
   total: number;
   timeLimitSecs?: number | null;
@@ -327,6 +328,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
     } else {
       selectedIdsRef.current = [id];
       setSelectedIds([id]);
+      doReveal([id], false);
     }
   };
 
@@ -367,7 +369,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
   if (!q) return <Shell><Spinner /></Shell>;
   const isMultiple = q.answerType === "MULTIPLE_CHOICE";
   const hasSelection = selectedIds.length > 0;
-  const cardQ: CardQuestion = { text: q.text, index: qIndex, total: questions.length, timeLimitSecs: q.timeLimitSecs };
+  const cardQ: CardQuestion = { text: q.text, answerType: q.answerType, index: qIndex, total: questions.length, timeLimitSecs: q.timeLimitSecs };
 
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
@@ -443,9 +445,9 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
               );
             })}
           </div>
-          {hasSelection && (
+          {isMultiple && hasSelection && (
             <button onClick={submitAnswer} className="w-full py-3 bg-[#02512c] text-white font-bold text-sm rounded-xl active:scale-95 transition-transform">
-              {isMultiple ? `Antworten abgeben (${selectedIds.length})` : "Antwort einloggen"}
+              Antworten abgeben ({selectedIds.length})
             </button>
           )}
         </div>
@@ -660,7 +662,7 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
 
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
-    const cardQ = question ? { text: question.text, index: question.index, total: question.total } : null;
+    const cardQ = question ? { text: question.text, answerType: question.answerType, index: question.index, total: question.total } : null;
     return (
       <GameCard question={cardQ} timeLeft={null}>
         <div className="flex flex-col items-center gap-1 mb-4">
@@ -698,7 +700,7 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
   }
 
   if (!question) return <Shell><Spinner /></Shell>;
-  const cardQ: CardQuestion = { text: question.text, index: question.index, total: question.total };
+  const cardQ: CardQuestion = { text: question.text, answerType: question.answerType, index: question.index, total: question.total };
 
   return (
     <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}>
@@ -815,17 +817,28 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
           </div>
         )}
         {question?.text !== undefined && (
-          <div className="px-5 pt-4 pb-3 min-h-[88px] flex items-center justify-center">
+          <div className="px-5 pt-4 pb-3 min-h-[88px] flex flex-col items-center justify-center gap-1.5">
             {question.text
               ? <p className="text-gray-900 text-base font-bold leading-snug text-center">{question.text}</p>
               : <p className="text-gray-400 text-sm text-center">Schau auf den Beamer</p>
             }
+            {question.answerType && (
+              <p className="text-xs font-semibold text-indigo-500 text-center leading-tight">{questionTypeHint(question.answerType)}</p>
+            )}
           </div>
         )}
         <div className="px-5 pb-5 flex-1">{children}</div>
       </div>
     </div>
   );
+}
+
+function questionTypeHint(answerType: string): string {
+  switch (answerType) {
+    case "MULTIPLE_CHOICE": return "Es gibt mehrere richtige Antworten – bestätige deine Auswahl!";
+    case "YES_NO": return "Ja oder Nein?";
+    default: return "Es gibt eine richtige Antwort";
+  }
 }
 
 function Shell({ children }: { children: React.ReactNode }) {

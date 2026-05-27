@@ -63,6 +63,7 @@ function BeamerContent() {
   const [bossResult, setBossResult] = useState<BossResult | null>(null);
   const [shieldResult, setShieldResult] = useState<ShieldResult | null>(null);
   const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
+  const [bossAnimTrigger, setBossAnimTrigger] = useState<{ type: "attack" | "steal"; value: number; key: number } | null>(null);
 
   const [reconnecting, setReconnecting] = useState(false);
 
@@ -70,8 +71,16 @@ function BeamerContent() {
   const hasJoinedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const prevShieldHpRef = useRef<[number, number] | null>(null);
+  const prevBossHpRef = useRef<number | null>(null);
+  const prevBossTimerEndRef = useRef<number | null>(null);
   const shieldStateRef = useRef<ShieldState | null>(null);
   useEffect(() => { shieldStateRef.current = shieldState; }, [shieldState]);
+
+  useEffect(() => {
+    if (!bossAnimTrigger) return;
+    const id = setTimeout(() => setBossAnimTrigger(null), 1200);
+    return () => clearTimeout(id);
+  }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refs so the keyboard handler always reads current state without stale closures
   const phaseRef = useRef(phase);
@@ -115,6 +124,9 @@ function BeamerContent() {
     setHiddenReveal(null);
     setBossResult(null);
     setShieldResult(null);
+    setBossAnimTrigger(null);
+    prevBossHpRef.current = null;
+    prevBossTimerEndRef.current = null;
     if (bm) setBeamerMode(bm);
     if (sm) setSpeedMode(sm);
     setPhase("waiting");
@@ -173,7 +185,19 @@ function BeamerContent() {
       socket.on(QUIZ_EVENTS.SESSION_STARTED, (data: { beamerMode?: string; speedMode?: string }) => {
         resetForNewSession(data.beamerMode, data.speedMode);
       });
-      socket.on(QUIZ_EVENTS.BOSS_STATE, (data: BossState) => { setBossState(data); setBeamerMode("BOSS"); });
+      socket.on(QUIZ_EVENTS.BOSS_STATE, (data: BossState) => {
+        const prevHp = prevBossHpRef.current;
+        const prevTimerEnd = prevBossTimerEndRef.current;
+        prevBossHpRef.current = data.hp;
+        prevBossTimerEndRef.current = data.timerEnd;
+        if (prevHp !== null && data.hp < prevHp) {
+          setBossAnimTrigger({ type: "attack", value: prevHp - data.hp, key: Date.now() });
+        } else if (prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000) {
+          setBossAnimTrigger({ type: "steal", value: Math.round((prevTimerEnd - data.timerEnd) / 1000), key: Date.now() });
+        }
+        setBossState(data);
+        setBeamerMode("BOSS");
+      });
       socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldState) => {
         if (prevShieldHpRef.current) {
           const preHp = prevShieldHpRef.current;
@@ -411,6 +435,22 @@ function BeamerContent() {
   return (
     <div className="flex flex-col min-h-screen bg-gray-900 text-white gap-4 p-6 relative overflow-hidden">
       {/* Flickering beamer effect — each button has its own independent pattern */}
+      {beamerMode === "BOSS" && (
+        <style>{`
+          @keyframes fly-btt {
+            0%   { transform: translate(-50%, 40vh) scale(0.5); opacity: 0; }
+            12%  { transform: translate(-50%, 28vh) scale(1);   opacity: 1; }
+            88%  { transform: translate(-50%, -28vh) scale(1);  opacity: 1; }
+            100% { transform: translate(-50%, -40vh) scale(0.5); opacity: 0; }
+          }
+          @keyframes fly-ttb {
+            0%   { transform: translate(-50%, -40vh) scale(0.5); opacity: 0; }
+            12%  { transform: translate(-50%, -28vh) scale(1);   opacity: 1; }
+            88%  { transform: translate(-50%, 28vh) scale(1);    opacity: 1; }
+            100% { transform: translate(-50%, 40vh) scale(0.5);  opacity: 0; }
+          }
+        `}</style>
+      )}
       {ability === "FLICKERING_BEAMER" && !isRevealed && (
         <style>{`
           @keyframes flicker0 {
@@ -505,8 +545,9 @@ function BeamerContent() {
       )}
 
       {/* Question text */}
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex flex-col items-center justify-center gap-2">
         <p className="text-4xl font-bold text-center leading-tight max-w-4xl">{question.text}</p>
+        <p className="text-lg text-white/40 font-medium">{questionTypeHint(question.answerType)}</p>
       </div>
 
       {/* BLITZ lock overlay — shown while answers are hidden */}
@@ -580,6 +621,19 @@ function BeamerContent() {
         </div>
       )}
 
+      {/* Boss battle projectile */}
+      {bossAnimTrigger && (
+        <div
+          className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-20 whitespace-nowrap"
+          style={{ animation: `${bossAnimTrigger.type === "attack" ? "fly-btt" : "fly-ttb"} 900ms ease-in-out forwards` }}
+        >
+          <span className="text-4xl">{bossAnimTrigger.type === "attack" ? "⚔️" : "⏳"}</span>
+          <span className={`font-black text-5xl ${bossAnimTrigger.type === "attack" ? "text-yellow-400" : "text-red-400"}`}>
+            {bossAnimTrigger.type === "attack" ? `-${bossAnimTrigger.value} HP` : `-${bossAnimTrigger.value}s`}
+          </span>
+        </div>
+      )}
+
       {/* Keyboard shortcut hint */}
       <div className="absolute bottom-4 right-5 flex items-center gap-1.5 opacity-20 hover:opacity-60 transition-opacity pointer-events-none select-none">
         <kbd className="bg-white/20 border border-white/30 rounded px-2 py-0.5 text-xs font-mono text-white">Leertaste</kbd>
@@ -596,6 +650,14 @@ function formatTimer(ms: number): string {
   const m = Math.floor(total / 60);
   const s = total % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
+}
+
+function questionTypeHint(answerType: string): string {
+  switch (answerType) {
+    case "MULTIPLE_CHOICE": return "Mehrere richtige Antworten – Auswahl bestätigen!";
+    case "YES_NO": return "Ja oder Nein?";
+    default: return "Eine richtige Antwort";
+  }
 }
 
 function abilityLabel(ability: string): string {
