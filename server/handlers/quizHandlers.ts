@@ -522,11 +522,13 @@ function initBoss(
   questions: { timeLimitSecs: number | null; points: number }[],
   avgPoints: number,
 ) {
-  const bossTimerSecs = session.bossTimerSeconds ?? 900;
+  const bossTimerSecs = session.bossTimerSeconds ?? 300;
   const avgSecs = questions.reduce((s, q) => s + (q.timeLimitSecs ?? 30), 0) / questions.length;
   const questionsInTime = Math.round(bossTimerSecs / avgSecs);
+  // In BLITZ/SUPER_BLITZ average damage per correct answer is ~50% of full points
+  const speedFactor = session.speedMode === "NORMAL" ? 1.0 : 0.5;
   // Fixed HP independent of participant count — damage is averaged per question, not cumulative
-  session.bossMaxHp = Math.max(10, Math.round(questionsInTime * avgPoints * 0.5));
+  session.bossMaxHp = Math.max(10, Math.round(questionsInTime * avgPoints * 0.5 * speedFactor));
   session.bossHp = session.bossMaxHp;
   session.bossTimerEnd = Date.now() + bossTimerSecs * 1000;
   session.bossWrongCount = 0;

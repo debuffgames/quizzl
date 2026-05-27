@@ -27,7 +27,7 @@ function ConfigContent() {
   const [gameMode, setGameMode] = useState<GameMode>("AUTONOMOUS");
   const [beamerMode, setBeamerMode] = useState<BeamerMode>("STANDARD");
   const [speedMode, setSpeedMode] = useState<SpeedMode>("NORMAL");
-  const [bossTimerMinutes, setBossTimerMinutes] = useState(15);
+  const [bossTimerMinutes, setBossTimerMinutes] = useState(5);
 
   // Auth + load quizzes
   useEffect(() => {
