@@ -1413,8 +1413,7 @@ function TeacherContent() {
                               const qDef = quizData?.questions[rec.questionIndex];
                               const answerLabels = rec.answerIds.map((id) => {
                                 const a = qDef?.answers.find((a) => a.id === id);
-                                if (!a) return "?";
-                                return a.text.length > 14 ? a.text.slice(0, 13) + "…" : a.text;
+                                return a ? a.text : "?";
                               }).join(", ");
                               return (
                                 <div key={rec.absoluteIndex} className="flex items-center gap-2 text-xs text-gray-500 py-0.5">
