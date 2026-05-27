@@ -730,7 +730,8 @@ function ShieldBattle({
   animTrigger: { preHp: [number, number]; postHp: [number, number]; key: number } | null;
 }) {
   const [overrideHp, setOverrideHp] = useState<[number, number] | null>(null);
-  const [charging, setCharging] = useState(false);
+  // chargeVisible[0] = team0's indicator visible; chargeVisible[1] = team1's indicator visible
+  const [chargeVisible, setChargeVisible] = useState<[boolean, boolean]>([false, false]);
   const [chargeVals, setChargeVals] = useState<{ v0: number; v1: number; max0: number; max1: number; progress: number }>({
     v0: 0, v1: 0, max0: 0, max1: 0, progress: 0,
   });
@@ -748,7 +749,7 @@ function ShieldBattle({
     setOverrideHp([...preHp] as [number, number]);
     setProj(null);
     setHitTeam(null);
-    setCharging(true);
+    setChargeVisible([dmgTo1 > 0, dmgTo0 > 0]);
     setChargeVals({ v0: 0, v1: 0, max0: dmgTo1, max1: dmgTo0, progress: 0 });
 
     const CHARGE_MS = 3000;
@@ -761,10 +762,10 @@ function ShieldBattle({
       setChargeVals({ v0: Math.round(dmgTo1 * progress), v1: Math.round(dmgTo0 * progress), max0: dmgTo1, max1: dmgTo0, progress });
       if (progress < 1) { rafRef.current = requestAnimationFrame(tick); return; }
 
-      setCharging(false);
+      // Charge complete — fly sequentially; second indicator stays until its turn
       let t = 0;
       if (dmgTo1 > 0) {
-        timeoutIds.push(setTimeout(() => setProj({ dir: 0, damage: dmgTo1 }), t));
+        timeoutIds.push(setTimeout(() => { setChargeVisible([false, dmgTo0 > 0]); setProj({ dir: 0, damage: dmgTo1 }); }, t));
         t += 800;
         timeoutIds.push(setTimeout(() => { setProj(null); setHitTeam(1); setOverrideHp([preHp[0], postHp[1]] as [number, number]); }, t));
         t += 550;
@@ -772,13 +773,13 @@ function ShieldBattle({
         t += 350;
       }
       if (dmgTo0 > 0) {
-        timeoutIds.push(setTimeout(() => setProj({ dir: 1, damage: dmgTo0 }), t));
+        timeoutIds.push(setTimeout(() => { setChargeVisible([false, false]); setProj({ dir: 1, damage: dmgTo0 }); }, t));
         t += 800;
         timeoutIds.push(setTimeout(() => { setProj(null); setHitTeam(0); setOverrideHp([postHp[0], postHp[1]] as [number, number]); }, t));
         t += 550;
         timeoutIds.push(setTimeout(() => { setHitTeam(null); setOverrideHp(null); }, t));
       } else {
-        timeoutIds.push(setTimeout(() => setOverrideHp(null), t));
+        timeoutIds.push(setTimeout(() => { setChargeVisible([false, false]); setOverrideHp(null); }, t));
       }
     };
     rafRef.current = requestAnimationFrame(tick);
@@ -822,7 +823,7 @@ function ShieldBattle({
         const hp = displayHp[i];
         const pct = Math.max(0, Math.round((hp / Math.max(t?.maxHp ?? 1, 1)) * 100));
         const isHit = hitTeam === i;
-        const isCharging = charging && (i === 0 ? chargeVals.max0 > 0 : chargeVals.max1 > 0);
+        const isCharging = chargeVisible[i as 0 | 1];
         return (
           <div
             key={i}
@@ -854,8 +855,8 @@ function ShieldBattle({
       {/* Center line */}
       <div className="absolute inset-y-0 left-1/2 w-px bg-white/10 -translate-x-1/2 pointer-events-none" />
 
-      {/* Charging indicators — both appear simultaneously, grow over 3 s */}
-      {charging && chargeVals.max0 > 0 && (
+      {/* Charging indicators — both grow simultaneously; second stays until its turn */}
+      {chargeVisible[0] && (
         <div
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
           style={{ animation: "charge-pulse 0.6s ease-in-out infinite", transform: `translate(calc(-50% - 180px), -50%) scale(${chargeScale})` }}
@@ -864,7 +865,7 @@ function ShieldBattle({
           <span className="font-black text-white text-5xl">-{chargeVals.v0}</span>
         </div>
       )}
-      {charging && chargeVals.max1 > 0 && (
+      {chargeVisible[1] && (
         <div
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-10 whitespace-nowrap"
           style={{ animation: "charge-pulse 0.6s ease-in-out infinite", transform: `translate(calc(-50% + 180px), -50%) scale(${chargeScale})` }}
@@ -883,7 +884,7 @@ function ShieldBattle({
           <span className="text-4xl">⚔️</span>
           <span className="font-black text-white text-5xl">-{proj.damage}</span>
         </div>
-      ) : !charging ? (
+      ) : !chargeVisible[0] && !chargeVisible[1] ? (
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/15 font-black text-3xl pointer-events-none select-none">VS</div>
       ) : null}
     </div>
