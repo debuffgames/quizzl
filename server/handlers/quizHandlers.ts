@@ -72,6 +72,63 @@ export function registerQuizHandlers(io: Server, socket: Socket, sessionManager:
     io.to(session.sessionId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
   });
 
+  socket.on(QUIZ_EVENTS.PAUSE, () => {
+    const sessionId = getControllerSession(socket, sessionManager);
+    if (!sessionId) return;
+    const session = sessionManager.getById(sessionId);
+    if (!session || session.paused) return;
+
+    session.paused = true;
+    session.pausedAt = Date.now();
+
+    if (session.questionTimerHandle) {
+      clearTimeout(session.questionTimerHandle);
+      session.questionTimerHandle = null;
+    }
+
+    io.to(session.sessionId).emit(QUIZ_EVENTS.PAUSE);
+  });
+
+  socket.on(QUIZ_EVENTS.RESUME, () => {
+    const sessionId = getControllerSession(socket, sessionManager);
+    if (!sessionId) return;
+    const session = sessionManager.getById(sessionId);
+    if (!session || !session.paused || !session.pausedAt) return;
+
+    const pausedDuration = Date.now() - session.pausedAt;
+    session.paused = false;
+    session.pausedAt = null;
+
+    // Shift all epoch-ms references forward by pause duration so timers resume correctly
+    if (session.questionTimerEnd !== null) session.questionTimerEnd += pausedDuration;
+    if (session.bossTimerEnd !== null) session.bossTimerEnd += pausedDuration;
+    if (session.answersVisibleAt !== null) session.answersVisibleAt += pausedDuration;
+
+    // Re-start auto-reveal timer if still pending
+    if (session.questionTimerEnd !== null && !session.answerRevealed) {
+      const remaining = session.questionTimerEnd - Date.now();
+      if (remaining > 0) {
+        const capturedIndex = session.currentQuestionIndex;
+        session.questionTimerHandle = setTimeout(async () => {
+          const current = sessionManager.getById(session.sessionId);
+          if (!current || current.currentQuestionIndex !== capturedIndex || current.answerRevealed) return;
+          current.questionTimerHandle = null;
+          await revealAnswer(io, current, sessionManager);
+        }, remaining);
+      }
+    }
+
+    const remainingSecs = session.questionTimerEnd !== null
+      ? Math.max(0, Math.round((session.questionTimerEnd - Date.now()) / 1000))
+      : null;
+
+    io.to(session.sessionId).emit(QUIZ_EVENTS.RESUME, { remainingSecs });
+    if (remainingSecs !== null) {
+      io.to(session.sessionId).emit(QUIZ_EVENTS.TIMER_SYNC, { remainingSecs });
+    }
+    if (session.beamerMode === "BOSS") sendBossState(io, session);
+  });
+
   socket.on(QUIZ_EVENTS.END_SESSION, async () => {
     const sessionId = getTeacherSession(socket, sessionManager);
     if (!sessionId) return;

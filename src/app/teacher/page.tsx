@@ -307,6 +307,7 @@ function TeacherContent() {
   const [nowTick, setNowTick] = useState(() => Date.now());
 
   const [socketConnected, setSocketConnected] = useState(true);
+  const [paused, setPaused] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
@@ -464,6 +465,8 @@ function TeacherContent() {
 
     socket.on("disconnect", () => setSocketConnected(false));
 
+    socket.on(QUIZ_EVENTS.PAUSE, () => setPaused(true));
+    socket.on(QUIZ_EVENTS.RESUME, () => setPaused(false));
     socket.on(QUIZ_EVENTS.PLAYER_JOINED, (p: Participant) => setParticipants((prev) => [...prev.filter((x) => x.participantId !== p.participantId), p]));
     socket.on(QUIZ_EVENTS.PLAYER_LEFT, ({ participantId }: { participantId: string }) => setParticipants((prev) => prev.filter((x) => x.participantId !== participantId)));
 
@@ -523,17 +526,22 @@ function TeacherContent() {
     fetchQuizzes();
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Forward spacebar commands from the hub parent window
+  // Forward spacebar / pause commands from the hub parent window
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
-      if (e.data?.type !== "KEYBOARD_CMD") return;
-      if (phaseRef.current !== "active") return;
-      if (revealedRef.current) {
-        socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
-      } else if (speedModeRef.current === "BLITZ" && !answersVisibleRef.current) {
-        socketRef.current?.emit(QUIZ_EVENTS.SHOW_ANSWERS);
-      } else {
-        socketRef.current?.emit(QUIZ_EVENTS.REVEAL_ANSWER);
+      if (e.data?.type === "KEYBOARD_CMD") {
+        if (phaseRef.current !== "active") return;
+        if (revealedRef.current) {
+          socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
+        } else if (speedModeRef.current === "BLITZ" && !answersVisibleRef.current) {
+          socketRef.current?.emit(QUIZ_EVENTS.SHOW_ANSWERS);
+        } else {
+          socketRef.current?.emit(QUIZ_EVENTS.REVEAL_ANSWER);
+        }
+      } else if (e.data?.type === "PAUSE_CMD") {
+        socketRef.current?.emit(QUIZ_EVENTS.PAUSE);
+      } else if (e.data?.type === "RESUME_CMD") {
+        socketRef.current?.emit(QUIZ_EVENTS.RESUME);
       }
     };
     window.addEventListener("message", onMessage);
@@ -1168,7 +1176,7 @@ function TeacherContent() {
   if (phase === "active") {
     const maxCount = distribution ? Math.max(...distribution.map((d) => d.count), 1) : 1;
     return (
-      <Layout reconnecting={!socketConnected}>
+      <Layout reconnecting={!socketConnected} paused={paused}>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <p className="text-xs text-gray-400">
@@ -1593,13 +1601,18 @@ function TeacherContent() {
 
 // ─── Shared layout ────────────────────────────────────────────────────────────
 
-function Layout({ children, reconnecting }: { children: React.ReactNode; reconnecting?: boolean }) {
+function Layout({ children, reconnecting, paused }: { children: React.ReactNode; reconnecting?: boolean; paused?: boolean }) {
   return (
     <div className="relative flex flex-col h-screen max-h-screen bg-white text-gray-900 overflow-hidden">
       {reconnecting && (
         <div className="absolute top-0 inset-x-0 z-50 flex items-center justify-center gap-2 bg-amber-500 py-1.5 text-xs font-semibold text-white">
           <div className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin" />
           Verbindung unterbrochen – wird neu verbunden…
+        </div>
+      )}
+      {paused && (
+        <div className="absolute top-0 inset-x-0 z-40 flex items-center justify-center gap-2 bg-indigo-600 py-1.5 text-xs font-semibold text-white">
+          ⏸ Pausiert
         </div>
       )}
       <div className="px-4 pt-3 pb-1 shrink-0">

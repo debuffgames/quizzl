@@ -67,7 +67,9 @@ function BeamerContent() {
   const [bossChargeAnim, setBossChargeAnim] = useState<{ type: "attack" | "steal"; finalValue: number; progress: number; key: number } | null>(null);
   const [stampVisible, setStampVisible] = useState(false);
   const [quaking, setQuaking] = useState(false);
+  const [bossHit, setBossHit] = useState(false);
 
+  const [paused, setPaused] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
 
   const socketRef = useRef<Socket | null>(null);
@@ -85,14 +87,20 @@ function BeamerContent() {
 
   useEffect(() => {
     if (!bossAnimTrigger) return;
+    // Trigger boss hit bash animation ~750 ms in (when projectile is nearly there)
+    let hitId: ReturnType<typeof setTimeout> | undefined;
+    if (bossAnimTrigger.type === "attack") {
+      hitId = setTimeout(() => setBossHit(true), 750);
+    }
     const id = setTimeout(() => {
       setBossAnimTrigger(null);
+      setBossHit(false);
       if (pendingBossStateRef.current) {
         setBossState(pendingBossStateRef.current);
         pendingBossStateRef.current = null;
       }
     }, 1200);
-    return () => clearTimeout(id);
+    return () => { clearTimeout(id); if (hitId) clearTimeout(hitId); };
   }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -160,12 +168,12 @@ function BeamerContent() {
     }, 1000);
   };
 
-  // Boss timer tick
+  // Boss timer tick — stops during pause
   useEffect(() => {
-    if (beamerMode !== "BOSS" || !bossState) return;
+    if (beamerMode !== "BOSS" || !bossState || paused) return;
     const id = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [beamerMode, bossState]);
+  }, [beamerMode, bossState, paused]);
 
   const resetForNewSession = (bm?: string, sm?: string) => {
     clearTimer();
@@ -183,6 +191,8 @@ function BeamerContent() {
     setBossChargeAnim(null);
     setStampVisible(false);
     setQuaking(false);
+    setBossHit(false);
+    setPaused(false);
     pendingBossStateRef.current = null;
     prevBossHpRef.current = null;
     prevBossTimerEndRef.current = null;
@@ -242,6 +252,11 @@ function BeamerContent() {
         if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
       });
 
+      socket.on(QUIZ_EVENTS.PAUSE, () => { setPaused(true); clearTimer(); });
+      socket.on(QUIZ_EVENTS.RESUME, (data: { remainingSecs?: number | null }) => {
+        setPaused(false);
+        if (data?.remainingSecs) startTimer(data.remainingSecs);
+      });
       socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, () => setAnswersVisible(true));
       socket.on(QUIZ_EVENTS.SESSION_STARTED, (data: { beamerMode?: string; speedMode?: string }) => {
         resetForNewSession(data.beamerMode, data.speedMode);
@@ -432,7 +447,12 @@ function BeamerContent() {
         <div className="flex flex-col min-h-screen bg-gray-900 text-white p-8 gap-8">
           {/* Hero */}
           <div className="flex flex-col items-center gap-4 pt-4">
-            <p className="text-8xl">🛡️</p>
+            <img
+              src={shieldResult.winner === "Team Grün" ? "/ch/edo_solo.png" : "/ch/parus.png"}
+              alt={shieldResult.winner}
+              className="h-64 w-auto object-contain select-none pointer-events-none"
+              draggable={false}
+            />
             <h1 className="text-6xl font-black text-center" style={{ color: winnerColor }}>
               {shieldResult.winner.toUpperCase()}
             </h1>
@@ -495,6 +515,15 @@ function BeamerContent() {
     );
   }
 
+  if (paused) {
+    return (
+      <FullScreen bg="bg-gray-900">
+        <div className="text-9xl mb-6">⏸</div>
+        <p className="text-white text-5xl font-black tracking-wide">Pause</p>
+      </FullScreen>
+    );
+  }
+
   if (!question) return <FullScreen bg="bg-gray-900" />;
 
   const isRevealed = phase === "revealed";
@@ -522,6 +551,15 @@ function BeamerContent() {
             0%,100% { opacity: 0.85; }
             50%     { opacity: 1; }
           }
+          @keyframes boss-bash {
+            0%,100% { transform: translate(0,0); }
+            15% { transform: translate(-6px,3px); }
+            30% { transform: translate(6px,-3px); }
+            50% { transform: translate(-4px,2px); }
+            70% { transform: translate(4px,-2px); }
+            85% { transform: translate(-2px,1px); }
+          }
+          .boss-bash { animation: boss-bash 0.45s ease-out; }
           @keyframes stamp-in {
             0%   { transform: rotate(-8deg) scale(2.2); opacity: 0; }
             55%  { transform: rotate(-8deg) scale(0.92); opacity: 1; }
@@ -574,7 +612,7 @@ function BeamerContent() {
 
       {/* Boss overlay */}
       {beamerMode === "BOSS" && bossState && (
-        <div className="flex items-center gap-4 bg-black/40 rounded-2xl px-4 py-3">
+        <div className={`flex items-center gap-4 bg-black/40 rounded-2xl px-4 py-3${bossHit ? " boss-bash" : ""}`}>
           <img src="/ch/troodos.png" alt="Troodos" className="h-72 w-auto object-contain select-none shrink-0 pointer-events-none" draggable={false} />
           <div className="flex-1">
             <div className="flex items-center justify-between text-sm font-bold mb-1">

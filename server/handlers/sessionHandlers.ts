@@ -71,6 +71,8 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
 
     ack?.({ ok: true, gameMode: session.gameMode, beamerMode: session.beamerMode });
 
+    if (session.paused) socket.emit(QUIZ_EVENTS.PAUSE);
+
     // Send current state if session is already active
     if (session.currentQuestionIndex >= 0) {
       // TEAM_SHIELD: assign late joiner to smaller team; re-send assignment on reconnect
@@ -155,6 +157,8 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
 
     ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode, beamerMode: session.beamerMode, speedMode: session.speedMode, bossTimerSeconds: session.bossTimerSeconds ?? undefined });
 
+    if (session.paused) socket.emit(QUIZ_EVENTS.PAUSE);
+
     // On first teacher join for a not-yet-started session, reset any lingering beamer
     // state (e.g. previous BOSS session still on screen)
     if (isNewTeacher && session.currentQuestionIndex === -1) {
@@ -200,6 +204,8 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(`${session.sessionId}:beamer`);
 
     ack?.({ ok: true, beamerMode: session.beamerMode, speedMode: session.speedMode });
+
+    if (session.paused) socket.emit(QUIZ_EVENTS.PAUSE);
 
     if (session.currentQuestionIndex >= 0) {
       await sendCurrentQuestion(io, socket.id, session, sessionManager);
