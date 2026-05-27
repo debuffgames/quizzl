@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { Suspense, useEffect, useRef, useState, useCallback } from "react";
+import { Suspense, useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { QUIZ_EVENTS } from "@/lib/socket/events";
@@ -66,6 +66,15 @@ interface PlayerStats {
   correctCount: number;
   wrongCount: number;
   history: AnswerRecord[];
+}
+
+interface QuestionStat {
+  questionIndex: number;
+  text: string;
+  totalPlayed: number;       // entries recorded (answered + timed-out)
+  answeredCount: number;     // actually submitted an answer
+  correctCount: number;
+  topWrongAnswers: { text: string; count: number }[];
 }
 
 const BEAMER_STYLES = [
@@ -285,6 +294,8 @@ function TeacherContent() {
   const [playerStats, setPlayerStats] = useState<PlayerStats[]>([]);
   const [showStats, setShowStats] = useState(false);
   const [expandedPlayer, setExpandedPlayer] = useState<string | null>(null);
+  const [showQuestionStats, setShowQuestionStats] = useState(false);
+  const [expandedQuestion, setExpandedQuestion] = useState<number | null>(null);
   const [quizData, setQuizData] = useState<FullQuiz | null>(null);
 
   // "New game" panel state (shown on ended screen)
@@ -389,6 +400,38 @@ function TeacherContent() {
 
     return () => { socketRef.current?.disconnect(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const questionStats = useMemo<QuestionStat[]>(() => {
+    if (!quizData || playerStats.length === 0) return [];
+    return quizData.questions.map((q, idx) => {
+      const allEntries = playerStats.flatMap((p) => p.history.filter((r) => r.questionIndex === idx));
+      if (allEntries.length === 0) return null;
+      const answeredEntries = allEntries.filter((r) => r.answerIds.length > 0);
+      const correctCount = allEntries.filter((r) => r.isCorrect === true).length;
+      const wrongEntries = answeredEntries.filter((r) => r.isCorrect === false);
+
+      const wrongCounts = new Map<string, number>();
+      for (const entry of wrongEntries) {
+        for (const id of entry.answerIds) {
+          const ans = q.answers.find((a) => a.id === id);
+          if (ans && !ans.isCorrect) wrongCounts.set(id, (wrongCounts.get(id) ?? 0) + 1);
+        }
+      }
+      const topWrongAnswers = Array.from(wrongCounts.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([id, count]) => ({ text: q.answers.find((a) => a.id === id)?.text ?? "?", count }));
+
+      return {
+        questionIndex: idx,
+        text: q.text,
+        totalPlayed: allEntries.length,
+        answeredCount: answeredEntries.length,
+        correctCount,
+        topWrongAnswers,
+      } as QuestionStat;
+    }).filter((qs): qs is QuestionStat => qs !== null);
+  }, [playerStats, quizData]);
 
   const connectSocket = useCallback((sid: string, initialPhase: "lobby" | "active") => {
     if (socketRef.current) socketRef.current.disconnect();
@@ -1259,7 +1302,75 @@ function TeacherContent() {
             </div>
           )}
 
-          {/* Analytics panel */}
+          {/* Question analytics panel */}
+          {questionStats.length > 0 && (
+            <div>
+              <button
+                onClick={() => setShowQuestionStats((v) => !v)}
+                className="flex items-center justify-between w-full text-xs text-gray-400 uppercase font-medium mb-2"
+              >
+                <span>Fragen ({questionStats.length})</span>
+                <span>{showQuestionStats ? "▲" : "▼"}</span>
+              </button>
+              {showQuestionStats && (
+                <div className="space-y-0.5">
+                  {questionStats.map((qs) => {
+                    const isExpanded = expandedQuestion === qs.questionIndex;
+                    const correctPct = qs.answeredCount > 0
+                      ? Math.round((qs.correctCount / qs.answeredCount) * 100)
+                      : 0;
+                    const unanswered = qs.totalPlayed - qs.answeredCount;
+                    return (
+                      <div key={qs.questionIndex}>
+                        <button
+                          onClick={() => setExpandedQuestion(isExpanded ? null : qs.questionIndex)}
+                          className="flex items-center gap-2 w-full px-2 py-1.5 bg-gray-50 rounded-lg text-left hover:bg-gray-100"
+                        >
+                          <span className="text-xs text-indigo-500 font-semibold w-5 shrink-0">F{qs.questionIndex + 1}</span>
+                          <span className="flex-1 text-xs truncate text-gray-600">{qs.text}</span>
+                          <span className="text-xs text-emerald-600 font-medium shrink-0">{qs.correctCount}✓</span>
+                          <span className="text-xs text-red-400 mr-1 shrink-0">{qs.answeredCount - qs.correctCount}✗</span>
+                          <span className="text-gray-300 text-xs">{isExpanded ? "▲" : "▼"}</span>
+                        </button>
+                        {isExpanded && (
+                          <div className="pl-6 py-1.5 space-y-1.5">
+                            <div className="flex gap-3 text-xs text-gray-500">
+                              <span>{qs.answeredCount}/{qs.totalPlayed} geantwortet</span>
+                              <span className="text-emerald-600 font-medium">{correctPct}% richtig</span>
+                              {unanswered > 0 && <span className="text-gray-400">{unanswered}× keine Antwort</span>}
+                            </div>
+                            {/* Correct rate bar */}
+                            <div className="w-full bg-gray-100 rounded-full h-1.5">
+                              <div
+                                className="bg-emerald-500 h-1.5 rounded-full transition-all"
+                                style={{ width: `${correctPct}%` }}
+                              />
+                            </div>
+                            {qs.topWrongAnswers.length > 0 && (
+                              <div className="space-y-0.5">
+                                <p className="text-xs text-gray-400 font-medium">Häufigste Fehlantworten:</p>
+                                {qs.topWrongAnswers.map((wa, i) => (
+                                  <div key={i} className="flex items-center gap-2 text-xs py-0.5">
+                                    <span className="shrink-0 text-red-400 font-bold w-5 text-right">{wa.count}×</span>
+                                    <span className="flex-1 truncate text-gray-600">{wa.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                            {qs.correctCount === qs.answeredCount && qs.answeredCount > 0 && (
+                              <p className="text-xs text-emerald-500 font-medium">Alle richtig!</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Player analytics panel */}
           {playerStats.length > 0 && (
             <div>
               <button
