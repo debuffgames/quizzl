@@ -416,7 +416,13 @@ function BeamerContent() {
           {/* Hero */}
           <div className="flex flex-col items-center gap-4 pt-4">
             {classWon
-              ? <p className="text-8xl">⚔️</p>
+              ? (
+                <div className="flex items-end justify-center">
+                  <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
+                  <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
+                  <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -ml-6" draggable={false} />
+                </div>
+              )
               : <img src="/ch/troodos.png" alt="Troodos" className="h-64 w-auto object-contain select-none pointer-events-none" draggable={false} />
             }
             <h1 className={`text-6xl font-black text-center leading-tight ${classWon ? "text-yellow-400" : "text-red-500"}`}>
