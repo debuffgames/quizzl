@@ -120,6 +120,8 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
     }
   }
 
+  session.answerRevealed = false;
+
   // Reset per-question participant state
   for (const p of session.participants.values()) {
     p.answeredCurrentQuestion = false;
@@ -266,6 +268,9 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
 // ─── revealAnswer ─────────────────────────────────────────────────────────────
 
 async function revealAnswer(io: Server, session: LiveSession, sessionManager: SessionManager) {
+  if (session.answerRevealed) return;
+  session.answerRevealed = true;
+
   const allQuestions = await prisma.question.findMany({
     where: { quizId: session.quizId },
     orderBy: { sortOrder: "asc" },

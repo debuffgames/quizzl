@@ -12,7 +12,7 @@ interface AnswerData { id: string; text: string | null; sortOrder: number; }
 interface QuestionData {
   id: string; text: string; answerType: string;
   answers: AnswerData[];
-  timeLimitSecs: number | null; index: number; total: number;
+  timeLimitSecs: number | null; remainingSecs?: number | null; index: number; total: number;
   explanation?: string | null;
   speedMode?: string;
   answersVisibleAt?: number | null;
@@ -166,7 +166,7 @@ function BeamerContent() {
         setShieldAnimTrigger(null);
         if (data.speedMode) setSpeedMode(data.speedMode);
         setPhase("question");
-        if (data.timeLimitSecs) startTimer(data.timeLimitSecs);
+        if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
       });
 
       socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, () => setAnswersVisible(true));

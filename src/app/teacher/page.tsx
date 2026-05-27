@@ -300,6 +300,7 @@ function TeacherContent() {
   const socketRef = useRef<Socket | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const hasTeacherJoinedRef = useRef(false);
+  const currentQIndexRef = useRef<number | null>(null);
 
   // Refs for keyboard/postMessage handler (avoids stale closures)
   const phaseRef = useRef<Phase>("loading");
@@ -421,11 +422,15 @@ function TeacherContent() {
     socket.on(QUIZ_EVENTS.PLAYER_LEFT, ({ participantId }: { participantId: string }) => setParticipants((prev) => prev.filter((x) => x.participantId !== participantId)));
 
     socket.on(QUIZ_EVENTS.QUESTION, (data: SocketQuestion) => {
+      const isNewQuestion = data.index !== currentQIndexRef.current;
+      currentQIndexRef.current = data.index;
       setCurrentQ(data);
-      setDistribution(null);
-      setResponseCount({ answered: 0, total: participants.length });
-      setRevealed(false);
-      setAnswersVisible(false);
+      if (isNewQuestion) {
+        setDistribution(null);
+        setResponseCount({ answered: 0, total: participants.length });
+        setRevealed(false);
+        setAnswersVisible(false);
+      }
       setPhase("active");
     });
 
@@ -1121,9 +1126,11 @@ function TeacherContent() {
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <p className="text-xs text-gray-400">
-              {currentQ ? `Frage ${currentQ.index + 1}/${currentQ.total}` : "Session aktiv"}
+              {gameMode === "AUTONOMOUS"
+                ? "Quizzl läuft autonom"
+                : currentQ ? `Frage ${currentQ.index + 1}/${currentQ.total}` : "Session aktiv"}
             </p>
-            {responseCount && (
+            {gameMode !== "AUTONOMOUS" && responseCount && (
               <p className="text-sm font-medium">{responseCount.answered}/{responseCount.total} geantwortet</p>
             )}
           </div>

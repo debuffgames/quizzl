@@ -107,7 +107,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
         });
       }
 
-      await sendCurrentQuestion(io, socket.id, session, sessionManager);
+      await sendCurrentQuestion(io, socket.id, session, sessionManager, payload.sub);
     }
   });
 
@@ -195,7 +195,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
   });
 }
 
-async function sendCurrentQuestion(io: Server, socketId: string, session: import("../sessionManager").LiveSession, _sessionManager: SessionManager) {
+async function sendCurrentQuestion(io: Server, socketId: string, session: import("../sessionManager").LiveSession, _sessionManager: SessionManager, participantId?: string) {
   if (session.currentQuestionIndex < 0) return;
 
   const quiz = await prisma.quiz.findUnique({
@@ -218,6 +218,9 @@ async function sendCurrentQuestion(io: Server, socketId: string, session: import
   const isBeamer = socketId === session.beamerSocketId;
   const isTeacher = socketId === session.teacherSocketId;
   const includeText = session.gameMode === "AUTONOMOUS" || isBeamer || isTeacher;
+  const alreadyAnswered = participantId
+    ? (session.participants.get(participantId)?.answeredCurrentQuestion ?? false)
+    : undefined;
 
   io.to(socketId).emit(QUIZ_EVENTS.QUESTION, {
     id: question.id,
@@ -243,5 +246,6 @@ async function sendCurrentQuestion(io: Server, socketId: string, session: import
         ? (session.currentBossAbility === "DANCING_BUZZERS" ? "DANCING_BUZZERS" : null)
         : undefined,
     hiddenAnswerId: isBeamer ? session.hiddenAnswerId : undefined,
+    alreadyAnswered: alreadyAnswered || undefined,
   });
 }

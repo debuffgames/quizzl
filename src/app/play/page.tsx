@@ -33,6 +33,7 @@ interface BeamerQuestion {
   speedMode?: string;
   answersVisibleAt?: number | null;
   bossAbility?: string | null;
+  alreadyAnswered?: boolean;
 }
 
 interface RevealData {
@@ -496,14 +497,20 @@ function BeamerPlay({ socket, reconnecting }: { socket: Socket; reconnecting: bo
   const applyQuestion = useCallback((data: BeamerQuestion) => {
     clearTimer();
     setQuestion(data);
-    setSelectedIds([]);
-    setSubmitted(false);
     setReveal(null);
     const isBlitz = data.speedMode === "BLITZ";
     const visibleNow = data.answersVisibleAt !== null && data.answersVisibleAt !== undefined;
     setAnswersUnlocked(!isBlitz || visibleNow);
     setDancing(data.bossAbility === "DANCING_BUZZERS");
-    setPhase("question");
+    if (data.alreadyAnswered) {
+      setSelectedIds([]);
+      setSubmitted(true);
+      setPhase("answered");
+    } else {
+      setSelectedIds([]);
+      setSubmitted(false);
+      setPhase("question");
+    }
     if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
     window.parent.postMessage({ type: "PROGRESS", progress: data.total > 0 ? data.index / data.total : 0, score: finalScoreRef.current }, "*");
   }, [clearTimer, startTimer]);

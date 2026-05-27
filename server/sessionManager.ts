@@ -61,6 +61,7 @@ export interface LiveSession {
   currentBossAbility: BossAbility | null;
   hiddenAnswerId: string | null;         // HIDDEN_ANSWER: ID of the answer hidden on beamer
   pendingEnd: Record<string, unknown> | null; // deferred END payload — sent when teacher clicks next
+  answerRevealed: boolean;             // true after revealAnswer runs — prevents double-scoring on reconnect
 }
 
 export class SessionManager {
@@ -70,7 +71,7 @@ export class SessionManager {
   private lobbyBeamerSockets = new Map<string, string>();   // lobbyId → beamer socketId (persists across sessions)
   private beamerSocketToLobby = new Map<string, string>();  // beamer socketId → lobbyId (for cleanup)
 
-  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd">): LiveSession {
+  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd" | "answerRevealed">): LiveSession {
     const live: LiveSession = {
       ...session,
       questionTimerHandle: null,
@@ -88,6 +89,7 @@ export class SessionManager {
       currentBossAbility: null,
       hiddenAnswerId: null,
       pendingEnd: null,
+      answerRevealed: false,
     };
     this.sessions.set(session.sessionId, live);
     this.lobbyToSession.set(session.lobbyId, session.sessionId);
