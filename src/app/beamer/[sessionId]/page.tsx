@@ -68,6 +68,8 @@ function BeamerContent() {
   const [stampVisible, setStampVisible] = useState(false);
   const [quaking, setQuaking] = useState(false);
   const [bossHit, setBossHit] = useState(false);
+  const [playerHit, setPlayerHit] = useState(false);
+  const [bossStealChargeValue, setBossStealChargeValue] = useState<number | null>(null);
 
   const [paused, setPaused] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -80,6 +82,7 @@ function BeamerContent() {
   const prevBossTimerEndRef = useRef<number | null>(null);
   const bossChargeRafRef = useRef<number | null>(null);
   const pendingBossStateRef = useRef<BossState | null>(null);
+  const bossStealQueuedRef = useRef<number | null>(null);
   const stampTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const quakeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const shieldStateRef = useRef<ShieldState | null>(null);
@@ -87,22 +90,29 @@ function BeamerContent() {
 
   useEffect(() => {
     if (!bossAnimTrigger) return;
-    // Trigger boss hit bash animation ~750 ms in (when projectile is nearly there)
-    let hitId: ReturnType<typeof setTimeout> | undefined;
-    hitId = setTimeout(() => {
+    // Impact ~750 ms in: shake only the relevant element, not the whole screen
+    const hitId = setTimeout(() => {
       if (bossAnimTrigger.type === "attack") setBossHit(true);
-      setQuaking(true);
-      setTimeout(() => setQuaking(false), 500);
+      else setPlayerHit(true);
     }, 750);
     const id = setTimeout(() => {
-      setBossAnimTrigger(null);
       setBossHit(false);
-      if (pendingBossStateRef.current) {
-        setBossState(pendingBossStateRef.current);
-        pendingBossStateRef.current = null;
+      setPlayerHit(false);
+      if (bossAnimTrigger.type === "attack" && bossStealQueuedRef.current !== null) {
+        // Attack landed — now fire the queued steal
+        const stealVal = bossStealQueuedRef.current;
+        bossStealQueuedRef.current = null;
+        setBossStealChargeValue(null);
+        setBossAnimTrigger({ type: "steal", value: stealVal, key: Date.now() });
+      } else {
+        setBossAnimTrigger(null);
+        if (pendingBossStateRef.current) {
+          setBossState(pendingBossStateRef.current);
+          pendingBossStateRef.current = null;
+        }
       }
     }, 1200);
-    return () => { clearTimeout(id); if (hitId) clearTimeout(hitId); };
+    return () => { clearTimeout(id); clearTimeout(hitId); };
   }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -194,6 +204,9 @@ function BeamerContent() {
     setStampVisible(false);
     setQuaking(false);
     setBossHit(false);
+    setPlayerHit(false);
+    setBossStealChargeValue(null);
+    bossStealQueuedRef.current = null;
     setPaused(false);
     pendingBossStateRef.current = null;
     prevBossHpRef.current = null;
@@ -268,17 +281,23 @@ function BeamerContent() {
         const prevTimerEnd = prevBossTimerEndRef.current;
         prevBossHpRef.current = data.hp;
         prevBossTimerEndRef.current = data.timerEnd;
-        let willAnimate = false;
-        if (prevHp !== null && data.hp < prevHp) {
-          setBossChargeAnim({ type: "attack", finalValue: prevHp - data.hp, progress: 0, key: Date.now() });
-          willAnimate = true;
-        } else if (prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000) {
-          setBossChargeAnim({ type: "steal", finalValue: Math.round((prevTimerEnd - data.timerEnd) / 1000), progress: 0, key: Date.now() });
-          willAnimate = true;
-        }
-        // Delay visual HP/timer update until after the charge+fly animation completes
-        if (willAnimate) {
+
+        const attackDmg = prevHp !== null && data.hp < prevHp ? prevHp - data.hp : 0;
+        const stealSecs = prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000
+          ? Math.round((prevTimerEnd - data.timerEnd) / 1000) : 0;
+
+        if (attackDmg > 0 || stealSecs > 0) {
           pendingBossStateRef.current = data;
+          if (attackDmg > 0 && stealSecs > 0) {
+            // Both: charge simultaneously, attack fires first, steal queued after
+            bossStealQueuedRef.current = stealSecs;
+            setBossStealChargeValue(stealSecs);
+            setBossChargeAnim({ type: "attack", finalValue: attackDmg, progress: 0, key: Date.now() });
+          } else if (attackDmg > 0) {
+            setBossChargeAnim({ type: "attack", finalValue: attackDmg, progress: 0, key: Date.now() });
+          } else {
+            setBossChargeAnim({ type: "steal", finalValue: stealSecs, progress: 0, key: Date.now() });
+          }
         } else {
           setBossState(data);
         }
@@ -565,6 +584,14 @@ function BeamerContent() {
             85% { transform: translate(-2px,1px); }
           }
           .boss-bash { animation: boss-bash 0.45s ease-out; }
+          @keyframes player-bash {
+            0%,100% { transform: translate(0,0); }
+            20% { transform: translate(0, 10px); }
+            40% { transform: translate(0, -6px); }
+            60% { transform: translate(0, 4px); }
+            80% { transform: translate(0, -2px); }
+          }
+          .player-bash { animation: player-bash 0.45s ease-out; }
           @keyframes stamp-in {
             0%   { transform: rotate(-8deg) scale(2.2); opacity: 0; }
             55%  { transform: rotate(-8deg) scale(0.92); opacity: 1; }
@@ -700,7 +727,7 @@ function BeamerContent() {
 
       {/* Dino group + timer — BOSS mode */}
       {beamerMode === "BOSS" && (
-        <div className="flex items-end justify-center gap-8">
+        <div className={`flex items-end justify-center gap-8${playerHit ? " player-bash" : ""}`}>
           <div className="flex items-end justify-center">
             <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
             <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
@@ -772,20 +799,33 @@ function BeamerContent() {
         </div>
       )}
 
-      {/* Boss battle charge — builds up at origin for 3 s before flying */}
-      {bossChargeAnim && (
+      {/* Attack charge — grows at bottom (players → boss) */}
+      {bossChargeAnim?.type === "attack" && (
         <div
           className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-20 whitespace-nowrap"
           style={{
             animation: "charge-pulse 0.6s ease-in-out infinite",
-            transform: `translate(-50%, ${bossChargeAnim.type === "attack" ? "40vh" : "-40vh"}) scale(${0.1 + 0.9 * bossChargeAnim.progress})`,
+            transform: `translate(-50%, 40vh) scale(${0.1 + 0.9 * bossChargeAnim.progress})`,
           }}
         >
-          <span className="text-4xl">{bossChargeAnim.type === "attack" ? "⚔️" : "⏳"}</span>
-          <span className={`font-black text-5xl ${bossChargeAnim.type === "attack" ? "text-yellow-400" : "text-red-400"}`}>
-            {bossChargeAnim.type === "attack"
-              ? `-${Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} HP`
-              : `-${Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)}s`}
+          <span className="text-4xl">⚔️</span>
+          <span className="font-black text-yellow-400 text-5xl">-{Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} HP</span>
+        </div>
+      )}
+      {/* Steal charge — grows at top (boss → players); visible for steal-only OR while queued alongside attack */}
+      {(bossChargeAnim?.type === "steal" || bossStealChargeValue !== null) && (
+        <div
+          className="absolute top-1/2 left-1/2 flex items-center gap-3 bg-gray-950/90 rounded-full px-6 py-3 shadow-2xl pointer-events-none z-20 whitespace-nowrap"
+          style={{
+            animation: "charge-pulse 0.6s ease-in-out infinite",
+            transform: `translate(-50%, -40vh) scale(${0.1 + 0.9 * (bossChargeAnim?.progress ?? 1)})`,
+          }}
+        >
+          <span className="text-4xl">⏳</span>
+          <span className="font-black text-red-400 text-5xl">
+            -{bossChargeAnim?.type === "steal"
+              ? Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)
+              : bossStealChargeValue}s
           </span>
         </div>
       )}
