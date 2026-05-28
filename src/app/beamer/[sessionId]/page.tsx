@@ -23,6 +23,7 @@ interface QuestionData {
 interface TopScore { rank: number; displayName: string; score: number; }
 interface BossState { hp: number; maxHp: number; timerEnd: number; ability: string | null; wrongCount: number; threshold: number; }
 interface ShieldTeam { name: string; hp: number; maxHp: number; players?: string[]; }
+interface PlayerScore { displayName: string; teamIndex: number | null; pointsScored: number; }
 interface ShieldState { teams: ShieldTeam[]; }
 interface BossResult {
   winner: "class" | "boss";
@@ -73,6 +74,8 @@ function BeamerContent() {
   const [bossHit, setBossHit] = useState(false);
   const [playerHit, setPlayerHit] = useState(false);
   const [bossStealChargeValue, setBossStealChargeValue] = useState<number | null>(null);
+
+  const [playerScores, setPlayerScores] = useState<PlayerScore[]>([]);
 
   const [paused, setPaused] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
@@ -271,6 +274,7 @@ function BeamerContent() {
         const visibleNow = data.answersVisibleAt != null;
         setAnswersVisible(visibleNow);
         setHiddenReveal(null);
+        setPlayerScores([]);
         prevShieldHpRef.current = null;
         setShieldAnimTrigger(null);
         if (data.speedMode) setSpeedMode(data.speedMode);
@@ -342,10 +346,11 @@ function BeamerContent() {
       });
       socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
 
-      socket.on(QUIZ_EVENTS.ANSWER_REVEAL, ({ correctAnswerIds, hiddenReveal: hr }: { correctAnswerIds: string[]; hiddenReveal?: { id: string; text: string } }) => {
+      socket.on(QUIZ_EVENTS.ANSWER_REVEAL, ({ correctAnswerIds, hiddenReveal: hr, playerScores: ps }: { correctAnswerIds: string[]; hiddenReveal?: { id: string; text: string }; playerScores?: PlayerScore[] }) => {
         clearTimer();
         setCorrectIds(correctAnswerIds);
         if (hr) setHiddenReveal(hr);
+        if (ps) setPlayerScores(ps);
         // Save shield HP before SHIELD_STATE arrives with updated values
         if (shieldStateRef.current) {
           prevShieldHpRef.current = [shieldStateRef.current.teams[0].hp, shieldStateRef.current.teams[1].hp];
@@ -711,7 +716,7 @@ function BeamerContent() {
 
       {/* Team shield — large dominant display with attack animation */}
       {beamerMode === "TEAM_SHIELD" && shieldState && (
-        <ShieldBattle teams={shieldState.teams} animTrigger={shieldAnimTrigger} />
+        <ShieldBattle teams={shieldState.teams} animTrigger={shieldAnimTrigger} playerScores={phase === "revealed" ? playerScores : []} />
       )}
 
       {/* Header row */}
@@ -966,9 +971,11 @@ const SHIELD_COLORS = ["#22c55e", "#f97316"] as const;
 function ShieldBattle({
   teams,
   animTrigger,
+  playerScores,
 }: {
   teams: ShieldTeam[];
   animTrigger: { preHp: [number, number]; postHp: [number, number]; key: number } | null;
+  playerScores?: PlayerScore[];
 }) {
   const [overrideHp, setOverrideHp] = useState<[number, number] | null>(null);
   // chargeVisible[0] = team0's indicator visible; chargeVisible[1] = team1's indicator visible
@@ -1091,9 +1098,19 @@ function ShieldBattle({
             </div>
             {t?.players && t.players.length > 0 && (
               <div className="mt-3 w-full flex flex-col items-center gap-0.5">
-                {t.players.map((name) => (
-                  <p key={name} className="text-xs font-semibold truncate max-w-full" style={{ color: `${color}99` }}>{name}</p>
-                ))}
+                {t.players.map((name) => {
+                  const scored = playerScores?.find((ps) => ps.displayName === name && ps.teamIndex === i);
+                  return (
+                    <div key={name} className="flex items-center gap-1.5 max-w-full">
+                      <p className="text-xs font-semibold truncate" style={{ color: `${color}99` }}>{name}</p>
+                      {scored !== undefined && (
+                        <p className="text-xs font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
+                          +{scored.pointsScored}
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

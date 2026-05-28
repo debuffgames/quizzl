@@ -441,7 +441,10 @@ export async function revealAnswer(io: Server, session: LiveSession, sessionMana
   const hiddenReveal = session.hiddenAnswerId
     ? (() => { const a = q.answers.find((a) => a.id === session.hiddenAnswerId); return a ? { id: a.id, text: a.text } : undefined; })()
     : undefined;
-  io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, hiddenReveal });
+  const playerScores = Array.from(session.participants.values())
+    .filter((p) => damages.has(p.participantId))
+    .map((p) => ({ displayName: p.displayName, teamIndex: p.teamIndex, pointsScored: damages.get(p.participantId) ?? 0 }));
+  io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.ANSWER_REVEAL, { correctAnswerIds: correctIds, hiddenReveal, playerScores });
 
   const topScores = sessionManager.getTopScores(session, 10);
   io.to(session.sessionId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
