@@ -847,7 +847,7 @@ function ModeStartScreen({ beamerMode, teamInfo }: {
         <img src="/ch/troodos.png" alt="Troodos" className="h-44 w-auto object-contain mb-5 select-none pointer-events-none" draggable={false} />
         <p className="text-gray-600 text-base text-center leading-relaxed max-w-xs">
           Troodos denkt, er wäre der schlauste Dino der Welt.<br />
-          Du spielst im Team mit allen anderen.<br />
+          Du spielst im Team mit allen anderen gegen ihn.<br />
           Beantworte Fragen korrekt um Troodos zu zeigen, wer schlauer ist!
         </p>
       </Shell>
