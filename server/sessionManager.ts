@@ -57,6 +57,7 @@ export interface LiveSession {
   bossHp: number | null;
   bossTimerSeconds: number | null;
   bossTimerEnd: number | null;           // epoch ms; reduced by boss attacks
+  bossTimerFrozenRemaining: number | null; // ms remaining when frozen during reveal; null = running
   bossWrongCount: number | null;
   currentBossAbility: BossAbility | null;
   hiddenAnswerId: string | null;         // HIDDEN_ANSWER: ID of the answer hidden on beamer
@@ -73,7 +74,7 @@ export class SessionManager {
   private lobbyBeamerSockets = new Map<string, string>();   // lobbyId → beamer socketId (persists across sessions)
   private beamerSocketToLobby = new Map<string, string>();  // beamer socketId → lobbyId (for cleanup)
 
-  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd" | "answerRevealed" | "paused" | "pausedAt">): LiveSession {
+  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossTimerFrozenRemaining" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd" | "answerRevealed" | "paused" | "pausedAt">): LiveSession {
     const live: LiveSession = {
       ...session,
       questionTimerHandle: null,
@@ -87,6 +88,7 @@ export class SessionManager {
       bossMaxHp: null,
       bossHp: null,
       bossTimerEnd: null,
+      bossTimerFrozenRemaining: null,
       bossWrongCount: null,
       currentBossAbility: null,
       hiddenAnswerId: null,

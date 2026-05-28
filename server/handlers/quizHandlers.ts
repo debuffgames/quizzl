@@ -166,6 +166,12 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
   });
   if (!quiz) return;
 
+  // Resume boss timer that was frozen during the reveal phase
+  if (session.beamerMode === "BOSS" && session.bossTimerFrozenRemaining !== null) {
+    session.bossTimerEnd = Date.now() + session.bossTimerFrozenRemaining;
+    session.bossTimerFrozenRemaining = null;
+  }
+
   const isFirstQuestion = session.currentQuestionIndex === -1;
 
   let nextIndex = session.currentQuestionIndex + 1;
@@ -449,6 +455,11 @@ export async function revealAnswer(io: Server, session: LiveSession, sessionMana
   const topScores = sessionManager.getTopScores(session, 10);
   io.to(session.sessionId).emit(QUIZ_EVENTS.SCOREBOARD, { topN: topScores });
 
+  // Freeze boss timer for the duration of the reveal phase
+  if (session.beamerMode === "BOSS" && session.bossTimerEnd !== null && session.bossTimerFrozenRemaining === null) {
+    session.bossTimerFrozenRemaining = Math.max(0, session.bossTimerEnd - Date.now());
+  }
+
   // Push updated mode state
   if (session.beamerMode === "TEAM_SHIELD") sendShieldState(io, session);
   if (session.beamerMode === "BOSS") sendBossState(io, session);
@@ -549,13 +560,16 @@ function applyBossWrongAnswer(session: LiveSession, eligibleCount: number): bool
 }
 
 export function sendBossState(io: Server, session: LiveSession) {
+  const isFrozen = session.bossTimerFrozenRemaining !== null;
   const state = {
     hp: session.bossHp,
     maxHp: session.bossMaxHp,
-    timerEnd: session.bossTimerEnd,
+    timerEnd: isFrozen ? Date.now() + session.bossTimerFrozenRemaining! : session.bossTimerEnd,
+    timerFrozen: isFrozen,
     ability: session.currentBossAbility,
     wrongCount: session.bossWrongCount,
     threshold: Math.max(1, Math.ceil(session.participants.size / 4)),
+    players: Array.from(session.participants.values()).map((p) => p.displayName),
   };
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.BOSS_STATE, state);
   io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.BOSS_STATE, state);
@@ -622,7 +636,7 @@ function initBoss(
   // In BLITZ/SUPER_BLITZ average damage per correct answer is ~50% of full points
   const speedFactor = session.speedMode === "NORMAL" ? 1.0 : 0.5;
   // Fixed HP independent of participant count — damage is averaged per question, not cumulative
-  session.bossMaxHp = Math.max(10, Math.round(questionsInTime * avgPoints * 0.5 * speedFactor));
+  session.bossMaxHp = Math.max(10, Math.round(questionsInTime * avgPoints * 1.0 * speedFactor));
   session.bossHp = session.bossMaxHp;
   session.bossTimerEnd = Date.now() + bossTimerSecs * 1000;
   session.bossWrongCount = 0;

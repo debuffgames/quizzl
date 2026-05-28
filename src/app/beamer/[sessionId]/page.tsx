@@ -21,7 +21,7 @@ interface QuestionData {
   fairZoneSecs?: number;
 }
 interface TopScore { rank: number; displayName: string; score: number; }
-interface BossState { hp: number; maxHp: number; timerEnd: number; ability: string | null; wrongCount: number; threshold: number; }
+interface BossState { hp: number; maxHp: number; timerEnd: number; timerFrozen?: boolean; ability: string | null; wrongCount: number; threshold: number; players?: string[]; }
 interface ShieldTeam { name: string; hp: number; maxHp: number; players?: string[]; }
 interface PlayerScore { displayName: string; teamIndex: number | null; pointsScored: number; }
 interface ShieldState { teams: ShieldTeam[]; }
@@ -61,6 +61,7 @@ function BeamerContent() {
   const [speedMode, setSpeedMode] = useState("NORMAL");
   const [answersVisible, setAnswersVisible] = useState(false);
   const [bossState, setBossState] = useState<BossState | null>(null);
+  const [frozenBossTimerMs, setFrozenBossTimerMs] = useState<number | null>(null);
   const [shieldState, setShieldState] = useState<ShieldState | null>(null);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [hiddenReveal, setHiddenReveal] = useState<{ id: string; text: string } | null>(null);
@@ -275,6 +276,7 @@ function BeamerContent() {
         setAnswersVisible(visibleNow);
         setHiddenReveal(null);
         setPlayerScores([]);
+        setFrozenBossTimerMs(null);
         prevShieldHpRef.current = null;
         setShieldAnimTrigger(null);
         if (data.speedMode) setSpeedMode(data.speedMode);
@@ -329,6 +331,11 @@ function BeamerContent() {
           setBossState(data);
         }
         setBeamerMode("BOSS");
+        if (data.timerFrozen) {
+          setFrozenBossTimerMs(Math.max(0, data.timerEnd - Date.now()));
+        } else {
+          setFrozenBossTimerMs(null);
+        }
       });
       socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldState) => {
         if (prevShieldHpRef.current) {
@@ -692,9 +699,9 @@ function BeamerContent() {
         <div className={`flex items-center gap-4 bg-black/40 rounded-2xl px-4 py-3${bossHit ? " boss-bash" : ""}`}>
           <img src="/ch/troodos.png" alt="Troodos" className="h-72 w-auto object-contain select-none shrink-0 pointer-events-none" draggable={false} />
           <div className="flex-1">
-            <div className="flex items-center justify-between text-sm font-bold mb-1">
-              <span className="text-red-400">👾 Boss</span>
-              <span className="text-red-300">{bossState.hp} / {bossState.maxHp} Rätselkraft</span>
+            <div className="flex items-center justify-between font-bold mb-2">
+              <span className="text-red-400 text-2xl">Troodos</span>
+              <span className="text-red-300 text-2xl">{bossState.hp} / {bossState.maxHp} Rätselkraft</span>
             </div>
             <div className="w-full bg-gray-700 rounded-full h-3">
               <div
@@ -771,23 +778,65 @@ function BeamerContent() {
       )}
 
       {/* Dino group + timer — BOSS mode */}
-      {beamerMode === "BOSS" && (
-        <div className={`flex items-end justify-center gap-8${playerHit ? " player-bash" : ""}`}>
-          <div className="flex items-end justify-center">
-            <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
-            <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
-            <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -ml-6" draggable={false} />
-          </div>
-          {bossState && (
-            <div className="flex flex-col items-center justify-end pb-2 shrink-0">
-              <p className="text-white/40 text-sm font-semibold uppercase tracking-wider mb-1">Verbleibende Zeit</p>
-              <p className={`font-black tabular-nums leading-none ${(bossState.timerEnd - nowTick) < 60000 ? "text-red-400 animate-pulse" : "text-white"}`} style={{ fontSize: "4.5rem" }}>
-                {formatTimer(Math.max(0, bossState.timerEnd - nowTick))}
-              </p>
+      {beamerMode === "BOSS" && (() => {
+        const allBossPlayers = bossState?.players ?? [];
+        const mid = Math.ceil(allBossPlayers.length / 2);
+        const leftPlayers = allBossPlayers.slice(0, mid);
+        const rightPlayers = allBossPlayers.slice(mid);
+        const showScores = phase === "revealed";
+        return (
+          <div className={`flex items-end justify-center gap-6${playerHit ? " player-bash" : ""}`}>
+            {/* Left player column */}
+            <div className="flex flex-col items-end gap-0.5 pb-3 min-w-[90px]">
+              {leftPlayers.map((name) => {
+                const scored = showScores ? playerScores.find((ps) => ps.displayName === name) : undefined;
+                return (
+                  <div key={name} className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-white/50 truncate max-w-[80px] text-right">{name}</p>
+                    {scored !== undefined && (
+                      <p className={`text-xs font-black tabular-nums shrink-0 ${scored.pointsScored > 0 ? "text-emerald-400" : "text-white/25"}`}>+{scored.pointsScored}</p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          )}
-        </div>
-      )}
+
+            {/* Dino group */}
+            <div className="flex items-end justify-center">
+              <img src="/ch/trizea.png" alt="Trizea" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -mr-6" draggable={false} />
+              <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
+              <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain select-none pointer-events-none relative z-0 -ml-6" draggable={false} />
+            </div>
+
+            {/* Right player column */}
+            <div className="flex flex-col items-start gap-0.5 pb-3 min-w-[90px]">
+              {rightPlayers.map((name) => {
+                const scored = showScores ? playerScores.find((ps) => ps.displayName === name) : undefined;
+                return (
+                  <div key={name} className="flex items-center gap-1.5">
+                    {scored !== undefined && (
+                      <p className={`text-xs font-black tabular-nums shrink-0 ${scored.pointsScored > 0 ? "text-emerald-400" : "text-white/25"}`}>+{scored.pointsScored}</p>
+                    )}
+                    <p className="text-xs font-semibold text-white/50 truncate max-w-[80px]">{name}</p>
+                  </div>
+                );
+              })}
+            </div>
+
+            {bossState && (() => {
+              const displayMs = frozenBossTimerMs ?? Math.max(0, bossState.timerEnd - nowTick);
+              return (
+                <div className="flex flex-col items-center justify-end pb-2 shrink-0">
+                  <p className="text-white/40 text-sm font-semibold uppercase tracking-wider mb-1">Verbleibende Zeit</p>
+                  <p className={`font-black tabular-nums leading-none ${displayMs < 60000 ? "text-red-400 animate-pulse" : "text-white"}`} style={{ fontSize: "4.5rem" }}>
+                    {formatTimer(displayMs)}
+                  </p>
+                </div>
+              );
+            })()}
+          </div>
+        );
+      })()}
 
       {/* Answer grid — hidden in BLITZ until answers visible */}
       {(speedMode !== "BLITZ" || answersVisible || isRevealed) && (
@@ -1097,13 +1146,18 @@ function ShieldBattle({
               <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
             </div>
             {t?.players && t.players.length > 0 && (
-              <div className="mt-3 w-full flex flex-col items-center gap-0.5">
+              <div className={`mt-3 w-full flex flex-col gap-0.5 ${i === 0 ? "items-start" : "items-end"}`}>
                 {t.players.map((name) => {
                   const scored = playerScores?.find((ps) => ps.displayName === name && ps.teamIndex === i);
                   return (
                     <div key={name} className="flex items-center gap-1.5 max-w-full">
+                      {i === 1 && scored !== undefined && (
+                        <p className="text-xs font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
+                          +{scored.pointsScored}
+                        </p>
+                      )}
                       <p className="text-xs font-semibold truncate" style={{ color: `${color}99` }}>{name}</p>
-                      {scored !== undefined && (
+                      {i === 0 && scored !== undefined && (
                         <p className="text-xs font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
                           +{scored.pointsScored}
                         </p>
