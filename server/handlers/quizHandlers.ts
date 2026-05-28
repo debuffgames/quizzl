@@ -324,7 +324,7 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
 
 // ─── revealAnswer ─────────────────────────────────────────────────────────────
 
-async function revealAnswer(io: Server, session: LiveSession, sessionManager: SessionManager) {
+export async function revealAnswer(io: Server, session: LiveSession, sessionManager: SessionManager) {
   if (session.answerRevealed) return;
   session.answerRevealed = true;
 

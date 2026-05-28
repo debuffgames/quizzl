@@ -1,7 +1,7 @@
 import type { Server, Socket } from "socket.io";
 import { QUIZ_EVENTS } from "../../src/lib/socket/events";
 import type { SessionManager } from "../sessionManager";
-import { emitStatsUpdate } from "./quizHandlers";
+import { emitStatsUpdate, revealAnswer } from "./quizHandlers";
 
 export function registerResponseHandlers(io: Server, socket: Socket, sessionManager: SessionManager) {
   socket.on(QUIZ_EVENTS.SUBMIT_ANSWER, (data: { questionId: string; answerIds: string[] }) => {
@@ -37,6 +37,15 @@ export function registerResponseHandlers(io: Server, socket: Socket, sessionMana
     io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.RESPONSE_COUNT, count);
 
     emitStatsUpdate(io, session);
+
+    // Auto-reveal when all players have submitted
+    if (count.answered === count.total && count.total > 0 && !session.answerRevealed) {
+      if (session.questionTimerHandle) {
+        clearTimeout(session.questionTimerHandle);
+        session.questionTimerHandle = null;
+      }
+      await revealAnswer(io, session, sessionManager);
+    }
   });
 
   // AUTONOMOUS: student reports per-question result (client-side evaluation)
