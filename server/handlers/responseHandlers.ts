@@ -4,7 +4,7 @@ import type { SessionManager } from "../sessionManager";
 import { emitStatsUpdate, revealAnswer } from "./quizHandlers";
 
 export function registerResponseHandlers(io: Server, socket: Socket, sessionManager: SessionManager) {
-  socket.on(QUIZ_EVENTS.SUBMIT_ANSWER, (data: { questionId: string; answerIds: string[] }) => {
+  socket.on(QUIZ_EVENTS.SUBMIT_ANSWER, async (data: { questionId: string; answerIds: string[] }) => {
     const entry = sessionManager.getParticipantBySocket(socket.id);
     if (!entry) return;
     const { session, participant } = entry;

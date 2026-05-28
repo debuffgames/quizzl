@@ -499,9 +499,25 @@ export async function revealAnswer(io: Server, session: LiveSession, sessionMana
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Fair zone: time at the start of a BLITZ/SUPER_BLITZ question where full points are awarded.
+// BLITZ:       0.5s × number of answer options
+// SUPER_BLITZ: same base + (reading-time estimate / 3)
+function calcFairZone(
+  q: { text: string; answerType: string; answers: { text: string; isCorrect: boolean }[] },
+  speedMode: string,
+): number {
+  const answerBase = 0.5 * q.answers.length;
+  if (speedMode !== "SUPER_BLITZ") return answerBase;
+  const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+  const totalWords = wordCount(q.text) + q.answers.reduce((sum, a) => sum + wordCount(a.text), 0);
+  const correctCount = q.answerType === "MULTIPLE_CHOICE" ? q.answers.filter((a) => a.isCorrect).length : 0;
+  const raw = Math.ceil(totalWords / 1.5) + 5 + correctCount * 2;
+  return answerBase + raw / 3;
+}
+
 function calcDamage(
   session: LiveSession,
-  q: { points: number; timeLimitSecs: number | null },
+  q: { points: number; timeLimitSecs: number | null; text: string; answerType: string; answers: { text: string; isCorrect: boolean }[] },
   p: LiveParticipant,
 ): number {
   if (session.speedMode === "NORMAL" || !session.answersVisibleAt || !p.answeredAt) {
@@ -509,7 +525,10 @@ function calcDamage(
   }
   const timeLimitSecs = q.timeLimitSecs ?? 30;
   const elapsed = Math.max(0, (p.answeredAt - session.answersVisibleAt) / 1000);
-  return Math.max(0, Math.round(q.points * (1 - elapsed / timeLimitSecs)));
+  const fairZone = calcFairZone(q, session.speedMode);
+  const effectiveElapsed = Math.max(0, elapsed - fairZone);
+  const effectiveWindow = Math.max(1, timeLimitSecs - fairZone);
+  return Math.max(0, Math.round(q.points * (1 - effectiveElapsed / effectiveWindow)));
 }
 
 function applyBossWrongAnswer(session: LiveSession, eligibleCount: number): boolean {
