@@ -84,11 +84,13 @@ const BEAMER_STYLES = [
   { bg: "bg-green-500",  text: "text-white",     symbol: "◆" },
 ] as const;
 
-// 1.5 words/s reading speed + 5s thinking buffer, rounded to nearest 5, clamped 10–60s
-function suggestTimer(questionText: string, answers: { text: string }[]): number {
+// 1.5 words/s reading speed + 5s thinking buffer, +2s per correct answer for MULTIPLE_CHOICE
+// rounded to nearest 5, clamped 10–60s
+function suggestTimer(questionText: string, answers: { text: string; isCorrect?: boolean }[], answerType?: string): number {
   const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
   const total = words(questionText) + answers.reduce((sum, a) => sum + words(a.text), 0);
-  const raw = Math.ceil(total / 1.5) + 5;
+  const correctCount = answerType === "MULTIPLE_CHOICE" ? answers.filter((a) => a.isCorrect).length : 0;
+  const raw = Math.ceil(total / 1.5) + 5 + correctCount * 2;
   return Math.max(10, Math.min(60, Math.round(raw / 5) * 5));
 }
 
@@ -662,7 +664,7 @@ function TeacherContent() {
       const updated = { ...q, ...patch };
       // Auto-recalculate timer when text changes (unless it's a manual timer edit)
       if (("text" in patch) && !("timeLimitSecs" in patch)) {
-        updated.timeLimitSecs = suggestTimer(updated.text, updated.answers);
+        updated.timeLimitSecs = suggestTimer(updated.text, updated.answers, updated.answerType);
       }
       return updated;
     }));
@@ -672,7 +674,7 @@ function TeacherContent() {
       if (idx !== qi) return q;
       const answers = q.answers.map((a, aidx) => aidx === ai ? { ...a, ...patch } : a);
       // Auto-recalculate timer when answer text changes
-      const timeLimitSecs = ("text" in patch) ? suggestTimer(q.text, answers) : q.timeLimitSecs;
+      const timeLimitSecs = ("text" in patch) ? suggestTimer(q.text, answers, q.answerType) : q.timeLimitSecs;
       return { ...q, answers, timeLimitSecs };
     }));
 
