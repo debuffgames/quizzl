@@ -512,7 +512,7 @@ export function calcFairZone(
   const wordCount = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
   const totalWords = wordCount(q.text) + q.answers.reduce((sum, a) => sum + wordCount(a.text), 0);
   const correctCount = q.answerType === "MULTIPLE_CHOICE" ? q.answers.filter((a) => a.isCorrect).length : 0;
-  const raw = Math.ceil(totalWords / 1.5) + 5 + correctCount * 2;
+  const raw = Math.ceil(totalWords / 1.5) + 8 + correctCount * 2;
   return answerBase + raw / 3;
 }
 

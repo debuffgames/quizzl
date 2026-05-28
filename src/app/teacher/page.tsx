@@ -90,7 +90,7 @@ function suggestTimer(questionText: string, answers: { text: string; isCorrect?:
   const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
   const total = words(questionText) + answers.reduce((sum, a) => sum + words(a.text), 0);
   const correctCount = answerType === "MULTIPLE_CHOICE" ? answers.filter((a) => a.isCorrect).length : 0;
-  const raw = Math.ceil(total / 1.5) + 5 + correctCount * 2;
+  const raw = Math.ceil(total / 1.5) + 8 + correctCount * 2;
   return Math.max(10, Math.min(60, Math.round(raw / 5) * 5));
 }
 
