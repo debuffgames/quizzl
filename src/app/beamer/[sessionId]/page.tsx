@@ -734,11 +734,6 @@ function BeamerContent() {
         )}
       </div>
 
-      {/* Timer bar */}
-      {timeLeft !== null && barFullSecs !== null && (
-        <TimerBar timeLeft={timeLeft} timeLimitSecs={barFullSecs} fairZoneSecs={barFairZone} />
-      )}
-
       {/* Response progress bar */}
       {responseCount && (
         <div className="w-full bg-white/10 rounded-full h-2">
@@ -749,10 +744,15 @@ function BeamerContent() {
         </div>
       )}
 
-      {/* Question text */}
+      {/* Question text + timer below */}
       <div className="flex-1 flex flex-col items-center justify-center gap-2 relative">
         <p className="text-4xl font-bold text-center leading-tight max-w-4xl">{question.text}</p>
         <p className="text-lg text-white/40 font-medium">{questionTypeHint(question.answerType)}</p>
+        {timeLeft !== null && barFullSecs !== null && (
+          <div className="w-full max-w-4xl mt-1">
+            <TimerBar timeLeft={timeLeft} timeLimitSecs={barFullSecs} fairZoneSecs={barFairZone} />
+          </div>
+        )}
         {beamerMode === "BOSS" && stampVisible && ability && ability !== "NONE" && (
           <div
             className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none select-none z-10"
@@ -957,17 +957,16 @@ function TimerBar({ timeLeft, timeLimitSecs, fairZoneSecs }: {
   const pct = Math.max(0, Math.min(100, (timeLeft / total) * 100));
   const fairPct = fairZoneSecs ? Math.min(100, (fairZoneSecs / total) * 100) : 0;
   const isUrgent = timeLeft <= 5;
-  const inFairZone = !!fairZoneSecs && timeLeft >= total - fairZoneSecs;
   return (
     <div className="flex items-center gap-3 w-full">
       <div className="relative flex-1 h-4 bg-white/10 rounded-full overflow-hidden">
-        {fairPct > 0 && (
-          <div className="absolute left-0 top-0 h-full bg-emerald-400/25" style={{ width: `${fairPct}%` }} />
-        )}
         <div
-          className={`absolute left-0 top-0 h-full rounded-full ${isUrgent ? "bg-red-400" : inFairZone ? "bg-emerald-400" : "bg-white/60"}`}
+          className={`absolute left-0 top-0 h-full rounded-full ${isUrgent ? "bg-red-400" : "bg-white/60"}`}
           style={{ width: `${pct}%`, transition: "width 1s linear" }}
         />
+        {fairPct > 0 && (
+          <div className="absolute top-0 bottom-0 w-0.5 bg-white/30" style={{ left: `${fairPct}%` }} />
+        )}
       </div>
       <span className={`font-black text-2xl tabular-nums min-w-[3.5rem] text-right ${isUrgent ? "text-red-400 animate-pulse" : "text-white/80"}`}>
         {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
@@ -1124,29 +1123,16 @@ function ShieldBattle({
         return (
           <div
             key={i}
-            className="flex-1 flex flex-col items-center justify-center py-5 px-6 transition-[background,box-shadow] duration-200"
+            className="flex-1 flex flex-col py-4 px-6 transition-[background,box-shadow] duration-200"
             style={{
               background: isHit ? `${color}35` : isCharging ? `${color}22` : `${color}14`,
               boxShadow: isHit ? `inset 0 0 50px ${color}50` : isCharging ? `inset 0 0 25px ${color}35` : "none",
               animation: isHit ? "shield-bash 0.45s ease-out" : "none",
             }}
           >
-            <img
-              src={i === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
-              alt={i === 0 ? "Edo" : "Parus"}
-              className="h-60 w-auto object-contain select-none mb-1 pointer-events-none"
-              draggable={false}
-            />
-            <p className="font-black text-base uppercase tracking-widest mb-1" style={{ color }}>{t?.name}</p>
-            <p className="font-black tabular-nums leading-none" style={{ color, fontSize: "5rem", textShadow: `0 0 40px ${color}90` }}>
-              {hp}
-            </p>
-            <p className="text-white/25 text-xs mt-0.5">/ {t?.maxHp} Schildenergie</p>
-            <div className="w-full bg-gray-700/50 rounded-full mt-3" style={{ height: 10 }}>
-              <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
-            </div>
+            {/* Names — top aligned */}
             {t?.players && t.players.length > 0 && (
-              <div className={`mt-auto pt-4 w-full flex flex-col gap-1 ${i === 0 ? "items-start" : "items-end"}`}>
+              <div className={`w-full flex flex-col gap-0.5 mb-2 ${i === 0 ? "items-start" : "items-end"}`}>
                 {t.players.map((name) => {
                   const scored = playerScores?.find((ps) => ps.displayName === name && ps.teamIndex === i);
                   return (
@@ -1167,6 +1153,23 @@ function ShieldBattle({
                 })}
               </div>
             )}
+            {/* Dino + HP — centered in remaining space */}
+            <div className="flex-1 flex flex-col items-center justify-center">
+              <img
+                src={i === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
+                alt={i === 0 ? "Edo" : "Parus"}
+                className="h-60 w-auto object-contain select-none mb-1 pointer-events-none"
+                draggable={false}
+              />
+              <p className="font-black text-base uppercase tracking-widest mb-1" style={{ color }}>{t?.name}</p>
+              <p className="font-black tabular-nums leading-none" style={{ color, fontSize: "5rem", textShadow: `0 0 40px ${color}90` }}>
+                {hp}
+              </p>
+              <p className="text-white/25 text-xs mt-0.5">/ {t?.maxHp} Schildenergie</p>
+              <div className="w-full bg-gray-700/50 rounded-full mt-3" style={{ height: 10 }}>
+                <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
+              </div>
+            </div>
           </div>
         );
       })}

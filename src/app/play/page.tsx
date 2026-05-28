@@ -582,7 +582,10 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
       setPhase((p) => { prevPhaseRef.current = p; return "paused"; });
       clearTimer();
     };
-    const onResume = () => setPhase(prevPhaseRef.current);
+    const onResume = (data: { remainingSecs?: number | null }) => {
+      if (data?.remainingSecs != null) startTimer(data.remainingSecs);
+      setPhase(prevPhaseRef.current);
+    };
     const onMessage = (e: MessageEvent) => {
       if (e.data?.type === "END") { clearTimer(); setPhase("ended"); }
     };
@@ -613,7 +616,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
       socket.off(QUIZ_EVENTS.BOSS_STATE, onBossState);
       window.removeEventListener("message", onMessage);
     };
-  }, [socket, applyQuestion, clearTimer]);
+  }, [socket, applyQuestion, clearTimer, startTimer]);
 
   const toggleAnswer = (id: string) => {
     if (submitted || !question || !answersUnlocked) return;
@@ -790,17 +793,16 @@ function TimerBar({ timeLeft, timeLimitSecs, fairZoneSecs }: {
   const pct = Math.max(0, Math.min(100, (timeLeft / total) * 100));
   const fairPct = fairZoneSecs ? Math.min(100, (fairZoneSecs / total) * 100) : 0;
   const isUrgent = timeLeft <= 5;
-  const inFairZone = !!fairZoneSecs && timeLeft >= total - fairZoneSecs;
   return (
     <div className="flex items-center gap-2 w-full">
       <div className="relative flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
-        {fairPct > 0 && (
-          <div className="absolute left-0 top-0 h-full bg-emerald-100" style={{ width: `${fairPct}%` }} />
-        )}
         <div
-          className={`absolute left-0 top-0 h-full rounded-full ${isUrgent ? "bg-red-400" : inFairZone ? "bg-emerald-400" : "bg-indigo-400"}`}
+          className={`absolute left-0 top-0 h-full rounded-full ${isUrgent ? "bg-red-400" : "bg-indigo-400"}`}
           style={{ width: `${pct}%`, transition: "width 1s linear" }}
         />
+        {fairPct > 0 && (
+          <div className="absolute top-0 bottom-0 w-0.5 bg-white/60" style={{ left: `${fairPct}%` }} />
+        )}
       </div>
       <span className={`font-black text-sm tabular-nums whitespace-nowrap ${isUrgent ? "text-red-600 animate-pulse" : "text-gray-500"}`}>
         {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
@@ -820,32 +822,9 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
 }) {
   const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#f97316";
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6" style={teamInfo ? { borderTop: `6px solid ${teamColor}` } : undefined}>
+    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6">
       {showLogo && !teamInfo && !bossMode && (
         <img src="/quizzl_logo.png" alt="Quizzl" className="w-full max-w-sm mb-4 px-8 select-none" draggable={false} />
-      )}
-      {teamInfo && (
-        <div className="w-full max-w-sm mb-3 flex flex-col items-center gap-1">
-          <img
-            src={teamInfo.teamIndex === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
-            alt={teamInfo.teamIndex === 0 ? "Edo" : "Parus"}
-            className="h-72 w-auto object-contain select-none pointer-events-none"
-            draggable={false}
-          />
-          <span className="text-2xl font-black tracking-tight" style={{ color: teamColor }}>
-            {teamInfo.teamName}
-          </span>
-          {myTeamHp !== null && myTeamHp !== undefined && (
-            <div className="flex flex-col items-center gap-0.5 w-full">
-              <span className="text-sm font-bold" style={{ color: teamColor }}>
-                Schild: {myTeamHp.hp} / {myTeamHp.maxHp}
-              </span>
-              <div className="w-full max-w-[200px] h-2 rounded-full bg-gray-200 overflow-hidden">
-                <div className="h-2 rounded-full transition-all duration-500" style={{ width: `${Math.max(0, Math.round((myTeamHp.hp / Math.max(myTeamHp.maxHp, 1)) * 100))}%`, backgroundColor: teamColor }} />
-              </div>
-            </div>
-          )}
-        </div>
       )}
       {bossMode && (
         <div className="w-full max-w-sm mb-3 flex items-end justify-center gap-3">
@@ -854,7 +833,26 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
           <img src="/ch/edo_solo.png" alt="Edo" className="h-48 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
       )}
-      <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
+      <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]" style={teamInfo ? { borderTop: `4px solid ${teamColor}` } : undefined}>
+        {teamInfo && (
+          <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100">
+            <img
+              src={teamInfo.teamIndex === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
+              alt={teamInfo.teamIndex === 0 ? "Edo" : "Parus"}
+              className="h-10 w-auto object-contain select-none pointer-events-none"
+              draggable={false}
+            />
+            <span className="font-black text-sm" style={{ color: teamColor }}>{teamInfo.teamName}</span>
+            {myTeamHp !== null && myTeamHp !== undefined && (
+              <div className="flex-1 flex flex-col items-end gap-0.5">
+                <span className="text-xs font-bold" style={{ color: teamColor }}>⚔ {myTeamHp.hp} / {myTeamHp.maxHp}</span>
+                <div className="w-16 h-1.5 rounded-full bg-gray-200 overflow-hidden">
+                  <div className="h-1.5 rounded-full transition-all duration-500" style={{ width: `${Math.max(0, Math.round((myTeamHp.hp / Math.max(myTeamHp.maxHp, 1)) * 100))}%`, backgroundColor: teamColor }} />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {question && (
           <div className="border-b border-gray-100">
             <div className="flex items-center justify-between px-5 py-3">

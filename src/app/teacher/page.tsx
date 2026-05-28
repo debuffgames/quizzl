@@ -404,9 +404,14 @@ function TeacherContent() {
         return;
       }
 
-      // Check for existing active session
-      const activeRes = await fetch(`/api/sessions/active?lobbyId=${encodeURIComponent(lobbyId)}`, { credentials: "include" });
-      const activeSession = await activeRes.json();
+      // Check for existing active session (retry up to 3× with 500ms delay for race condition)
+      let activeSession = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const activeRes = await fetch(`/api/sessions/active?lobbyId=${encodeURIComponent(lobbyId)}`, { credentials: "include" });
+        activeSession = await activeRes.json();
+        if (activeSession?.id) break;
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 500));
+      }
 
       if (activeSession?.id) {
         setSessionId(activeSession.id);
@@ -512,7 +517,14 @@ function TeacherContent() {
 
     socket.on("disconnect", () => setSocketConnected(false));
 
-    socket.on(QUIZ_EVENTS.PAUSE, () => setPaused(true));
+    socket.on(QUIZ_EVENTS.PAUSE, () => {
+      setPaused(true);
+      if (autoCountdownIntervalRef.current) {
+        clearInterval(autoCountdownIntervalRef.current);
+        autoCountdownIntervalRef.current = null;
+      }
+      setAutoCountdown(null);
+    });
     socket.on(QUIZ_EVENTS.RESUME, () => setPaused(false));
     socket.on(QUIZ_EVENTS.PLAYER_JOINED, (p: Participant) => setParticipants((prev) => [...prev.filter((x) => x.participantId !== p.participantId), p]));
     socket.on(QUIZ_EVENTS.PLAYER_LEFT, ({ participantId }: { participantId: string }) => setParticipants((prev) => prev.filter((x) => x.participantId !== participantId)));
@@ -1240,7 +1252,6 @@ function TeacherContent() {
 
   // ── ACTIVE SESSION ──
   if (phase === "active") {
-    const maxCount = distribution ? Math.max(...distribution.map((d) => d.count), 1) : 1;
     return (
       <Layout reconnecting={!socketConnected} paused={paused}>
         <header className="flex items-center justify-between px-4 py-3 border-b">
@@ -1272,10 +1283,11 @@ function TeacherContent() {
                   {currentQ.answers.map((a) => {
                     const style = BEAMER_STYLES[a.sortOrder] ?? BEAMER_STYLES[0];
                     const d = distribution?.find((x) => x.answerId === a.id);
+                    const isGrayed = revealed && !d?.isCorrect;
                     return (
                       <div
                         key={a.id}
-                        className={`rounded-xl p-2.5 ${style.bg} ${style.text} ${revealed && d?.isCorrect ? "ring-2 ring-white ring-offset-1 ring-offset-gray-100" : ""}`}
+                        className={`rounded-xl p-2.5 transition-colors ${isGrayed ? "bg-gray-200 text-gray-400" : `${style.bg} ${style.text}`} ${revealed && d?.isCorrect ? "ring-2 ring-white ring-offset-1 ring-offset-gray-100" : ""}`}
                       >
                         <span className="text-base leading-none block">{style.symbol}</span>
                         <span className="text-xs leading-tight block mt-1 line-clamp-2">{a.text}</span>
@@ -1295,36 +1307,6 @@ function TeacherContent() {
                     className="bg-indigo-500 h-2 rounded-full transition-all"
                     style={{ width: `${Math.round((responseCount.answered / Math.max(responseCount.total, 1)) * 100)}%` }}
                   />
-                </div>
-              )}
-              {/* Answer distribution (bar chart) */}
-              {distribution && (
-                <div className="space-y-2">
-                  {currentQ.answers.map((a) => {
-                    const d = distribution.find((x) => x.answerId === a.id);
-                    const count = d?.count ?? 0;
-                    const pct = Math.round((count / maxCount) * 100);
-                    return (
-                      <div key={a.id} className={`rounded-lg overflow-hidden border ${d?.isCorrect ? "border-green-300" : "border-gray-200"}`}>
-                        <div className="relative h-8 bg-gray-50">
-                          <div
-                            className={`absolute left-0 top-0 h-full transition-all duration-500 ${d?.isCorrect ? "bg-green-100" : "bg-gray-100"}`}
-                            style={{ width: revealed ? `${pct}%` : "0%" }}
-                          />
-                          <div className="relative flex items-center h-full px-3 gap-2">
-                            {gameMode === "BEAMER" && (
-                              <span className={`inline-flex items-center justify-center w-5 h-5 rounded text-[10px] font-bold shrink-0 ${BEAMER_STYLES[a.sortOrder]?.bg ?? "bg-gray-400"} ${BEAMER_STYLES[a.sortOrder]?.text ?? "text-white"}`}>
-                                {BEAMER_STYLES[a.sortOrder]?.symbol ?? ""}
-                              </span>
-                            )}
-                            <span className="text-xs flex-1 truncate">{a.text}</span>
-                            {revealed && <span className="text-xs font-semibold text-gray-600">{count}</span>}
-                            {d?.isCorrect && <span className="text-green-600 text-xs">✓</span>}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               )}
             </div>

@@ -7,7 +7,7 @@ export interface ModuleTokenPayload {
   schoolId?: string;
   firstName?: string;
   iss: "lernspiel-hub";
-  aud: "quizzl";
+  aud: string;
   exp: number;
 }
 
