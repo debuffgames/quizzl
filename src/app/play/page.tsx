@@ -845,7 +845,7 @@ function ModeStartScreen({ beamerMode, teamInfo }: {
         <img src="/quizzl_logo.png" alt="Quizzl" className="w-36 mb-5 select-none" draggable={false} />
         <h1 className="text-xl font-black text-gray-900 mb-4">Boss-Kampf</h1>
         <img src="/ch/troodos.png" alt="Troodos" className="h-44 w-auto object-contain mb-5 select-none pointer-events-none" draggable={false} />
-        <p className="text-gray-600 text-sm text-center leading-relaxed max-w-xs">
+        <p className="text-gray-600 text-base text-center leading-relaxed max-w-xs">
           Troodos denkt, er wäre der schlauste Dino der Welt.<br />
           Du spielst im Team mit allen anderen.<br />
           Beantworte Fragen korrekt um Troodos zu zeigen, wer schlauer ist!
@@ -863,7 +863,7 @@ function ModeStartScreen({ beamerMode, teamInfo }: {
           <img src="/ch/edo_solo.png" alt="Team Grün" className="h-32 w-auto object-contain select-none pointer-events-none" draggable={false} />
           <img src="/ch/parus.png" alt="Team Orange" className="h-32 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
-        <p className="text-gray-600 text-sm text-center leading-relaxed max-w-xs">
+        <p className="text-gray-600 text-base text-center leading-relaxed max-w-xs">
           Team Grün und Team Orange treten gegeneinander an.
           {teamInfo ? (
             <> Du bist in <span className="font-black" style={{ color: teamColor }}>{teamInfo.teamName}</span>.</>
@@ -879,7 +879,7 @@ function ModeStartScreen({ beamerMode, teamInfo }: {
       <img src="/quizzl_logo.png" alt="Quizzl" className="w-36 mb-5 select-none" draggable={false} />
       <h1 className="text-xl font-black text-gray-900 mb-4">Quizzl</h1>
       <img src="/ch/edo_solo.png" alt="Edo" className="h-44 w-auto object-contain mb-5 select-none pointer-events-none" draggable={false} />
-      <p className="text-gray-600 text-sm text-center leading-relaxed max-w-xs">
+      <p className="text-gray-600 text-base text-center leading-relaxed max-w-xs">
         Alle Spieler treten gegeneinander an.<br />
         Beantworte Fragen korrekt um möglichst viele Punkte zu sammeln!
       </p>
