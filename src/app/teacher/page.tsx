@@ -1538,7 +1538,7 @@ function TeacherContent() {
                   {autoCountdown !== null ? `Nächste Frage in ${autoCountdown}… →` : "Nächste Frage →"}
                 </button>
               )}
-              <div className="flex items-center justify-between mt-1">
+              <div className="flex items-center gap-2 mt-1">
                 <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
                   <button
                     onClick={() => { setAutoAdvance(false); cancelAutoCountdown(); }}

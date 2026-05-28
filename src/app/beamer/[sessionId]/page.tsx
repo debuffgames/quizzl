@@ -1146,19 +1146,19 @@ function ShieldBattle({
               <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
             </div>
             {t?.players && t.players.length > 0 && (
-              <div className={`mt-3 w-full flex flex-col gap-0.5 ${i === 0 ? "items-start" : "items-end"}`}>
+              <div className={`mt-auto pt-4 w-full flex flex-col gap-1 ${i === 0 ? "items-start" : "items-end"}`}>
                 {t.players.map((name) => {
                   const scored = playerScores?.find((ps) => ps.displayName === name && ps.teamIndex === i);
                   return (
                     <div key={name} className="flex items-center gap-1.5 max-w-full">
                       {i === 1 && scored !== undefined && (
-                        <p className="text-xs font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
+                        <p className="text-sm font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
                           +{scored.pointsScored}
                         </p>
                       )}
-                      <p className="text-xs font-semibold truncate" style={{ color: `${color}99` }}>{name}</p>
+                      <p className="text-sm font-semibold truncate" style={{ color: `${color}99` }}>{name}</p>
                       {i === 0 && scored !== undefined && (
-                        <p className="text-xs font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
+                        <p className="text-sm font-black tabular-nums shrink-0" style={{ color: scored.pointsScored > 0 ? color : `${color}55` }}>
                           +{scored.pointsScored}
                         </p>
                       )}
