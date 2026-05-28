@@ -114,7 +114,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
   });
 
   // Teacher joins to control the session
-  socket.on("quiz:teacherJoin", async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; error?: string }) => void) => {
+  socket.on("quiz:teacherJoin", async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; participants?: { participantId: string; displayName: string }[]; error?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "teacher") {
       ack?.({ ok: false, error: "Ungültiger Token" });
@@ -155,7 +155,11 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(session.sessionId);
     socket.join(`${session.sessionId}:teacher`);
 
-    ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode, beamerMode: session.beamerMode, speedMode: session.speedMode, bossTimerSeconds: session.bossTimerSeconds ?? undefined });
+    const currentParticipants = Array.from(session.participants.values()).map((p) => ({
+      participantId: p.participantId,
+      displayName: p.displayName,
+    }));
+    ack?.({ ok: true, sessionId: session.sessionId, gameMode: session.gameMode, beamerMode: session.beamerMode, speedMode: session.speedMode, bossTimerSeconds: session.bossTimerSeconds ?? undefined, participants: currentParticipants });
 
     if (session.paused) socket.emit(QUIZ_EVENTS.PAUSE);
 

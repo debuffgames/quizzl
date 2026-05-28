@@ -444,7 +444,7 @@ function TeacherContent() {
 
     socket.on("connect", () => {
       setSocketConnected(true);
-      socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; error?: string }) => {
+      socket.emit("quiz:teacherJoin", { lobbyId, token }, (ack: { ok: boolean; sessionId?: string; gameMode?: string; beamerMode?: string; speedMode?: string; bossTimerSeconds?: number; participants?: { participantId: string; displayName: string }[]; error?: string }) => {
         if (!ack.ok) {
           if (!hasTeacherJoinedRef.current) { setError(ack.error ?? "Socket-Verbindung fehlgeschlagen"); setPhase("error"); }
           return;
@@ -458,6 +458,7 @@ function TeacherContent() {
           setBossState(null);
           setShieldState(null);
           setPendingEnd(false);
+          if (ack.participants?.length) setParticipants(ack.participants);
           setPhase(initialPhase);
         }
       });
