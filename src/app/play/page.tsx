@@ -689,7 +689,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
     const correct = reveal.scoreGained > 0;
     const cardQ = question ? { text: question.text, answerType: question.answerType, index: question.index, total: question.total } : null;
     return (
-      <GameCard question={cardQ} timeLeft={null}>
+      <GameCard question={cardQ} timeLeft={null} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}>
         <div className="flex flex-col items-center gap-1 mb-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${correct ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
             {correct ? "✓" : "✗"}
