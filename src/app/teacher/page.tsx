@@ -285,6 +285,16 @@ function TeacherContent() {
   const [responseCount, setResponseCount] = useState<{ answered: number; total: number } | null>(null);
   const [distribution, setDistribution] = useState<AnswerDist[] | null>(null);
   const [revealed, setRevealed] = useState(false);
+  const [animLocked, setAnimLocked] = useState(false);
+  const [autoAdvance, setAutoAdvance] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("quizzl_autoAdvance") !== null
+      ? localStorage.getItem("quizzl_autoAdvance") === "true"
+      : true
+  );
+  const [rememberSetting, setRememberSetting] = useState<boolean>(() =>
+    typeof window !== "undefined" && localStorage.getItem("quizzl_autoAdvance") !== null
+  );
+  const [autoCountdown, setAutoCountdown] = useState<number | null>(null);
   const [topScores, setTopScores] = useState<TopScore[]>([]);
   // Sub-mode state (populated from teacherJoin ack)
   const [beamerMode, setBeamerMode] = useState<BeamerMode>("STANDARD");
@@ -319,6 +329,10 @@ function TeacherContent() {
   // Refs for keyboard/postMessage handler (avoids stale closures)
   const phaseRef = useRef<Phase>("loading");
   const revealedRef = useRef(false);
+  const animLockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoCountdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const beamerModeRef = useRef<BeamerMode>("STANDARD");
+  const autoAdvanceRef = useRef<boolean>(true);
   const speedModeRef = useRef<SpeedMode>("NORMAL");
   const answersVisibleRef = useRef(false);
   const pendingEndRef = useRef(false);
@@ -327,6 +341,12 @@ function TeacherContent() {
   useEffect(() => { speedModeRef.current = speedMode; }, [speedMode]);
   useEffect(() => { answersVisibleRef.current = answersVisible; }, [answersVisible]);
   useEffect(() => { pendingEndRef.current = pendingEnd; }, [pendingEnd]);
+  useEffect(() => { beamerModeRef.current = beamerMode; }, [beamerMode]);
+  useEffect(() => { autoAdvanceRef.current = autoAdvance; }, [autoAdvance]);
+  useEffect(() => {
+    if (rememberSetting) localStorage.setItem("quizzl_autoAdvance", String(autoAdvance));
+    else localStorage.removeItem("quizzl_autoAdvance");
+  }, [autoAdvance, rememberSetting]);
 
   const fetchQuizzes = useCallback(async () => {
     const [own, pub] = await Promise.all([
@@ -436,6 +456,30 @@ function TeacherContent() {
     }).filter((qs): qs is QuestionStat => qs !== null);
   }, [playerStats, quizData]);
 
+  const cancelAutoCountdown = useCallback(() => {
+    if (autoCountdownIntervalRef.current) { clearInterval(autoCountdownIntervalRef.current); autoCountdownIntervalRef.current = null; }
+    setAutoCountdown(null);
+  }, []);
+
+  const startAutoCountdown = useCallback(() => {
+    cancelAutoCountdown();
+    setAutoCountdown(5);
+    autoCountdownIntervalRef.current = setInterval(() => {
+      setAutoCountdown((prev) => {
+        if (prev === null || prev <= 1) {
+          clearInterval(autoCountdownIntervalRef.current!);
+          autoCountdownIntervalRef.current = null;
+          socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
+          return null;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, [cancelAutoCountdown]);
+
+  const startAutoCountdownRef = useRef(startAutoCountdown);
+  useEffect(() => { startAutoCountdownRef.current = startAutoCountdown; }, [startAutoCountdown]);
+
   const connectSocket = useCallback((sid: string, initialPhase: "lobby" | "active") => {
     if (socketRef.current) socketRef.current.disconnect();
     sessionIdRef.current = sid;
@@ -482,6 +526,10 @@ function TeacherContent() {
         setResponseCount({ answered: 0, total: participants.length });
         setRevealed(false);
         setAnswersVisible(false);
+        if (animLockTimerRef.current) { clearTimeout(animLockTimerRef.current); animLockTimerRef.current = null; }
+        setAnimLocked(false);
+        if (autoCountdownIntervalRef.current) { clearInterval(autoCountdownIntervalRef.current); autoCountdownIntervalRef.current = null; }
+        setAutoCountdown(null);
       }
       setPhase("active");
     });
@@ -491,7 +539,22 @@ function TeacherContent() {
     socket.on(QUIZ_EVENTS.SHIELD_STATE, (data: ShieldStateData) => setShieldState(data));
 
     socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
-    socket.on(QUIZ_EVENTS.ANSWER_DIST, ({ distribution: d }: { distribution: AnswerDist[] }) => { setDistribution(d); setRevealed(true); });
+    socket.on(QUIZ_EVENTS.ANSWER_DIST, ({ distribution: d }: { distribution: AnswerDist[] }) => {
+      setDistribution(d);
+      setRevealed(true);
+      if (animLockTimerRef.current) clearTimeout(animLockTimerRef.current);
+      const lockMs = beamerModeRef.current === "TEAM_SHIELD" ? 7000 : beamerModeRef.current === "BOSS" ? 6000 : 0;
+      if (lockMs > 0) {
+        setAnimLocked(true);
+        animLockTimerRef.current = setTimeout(() => {
+          animLockTimerRef.current = null;
+          setAnimLocked(false);
+          if (autoAdvanceRef.current) startAutoCountdownRef.current();
+        }, lockMs);
+      } else {
+        if (autoAdvanceRef.current) startAutoCountdownRef.current();
+      }
+    });
     socket.on(QUIZ_EVENTS.STATS_UPDATE, ({ participants }: { participants: PlayerStats[] }) => setPlayerStats(participants));
 
     socket.on(QUIZ_EVENTS.SCOREBOARD, ({ topN }: { topN: TopScore[] }) => setTopScores(topN));
@@ -534,7 +597,7 @@ function TeacherContent() {
     const onMessage = (e: MessageEvent) => {
       if (e.data?.type === "KEYBOARD_CMD") {
         if (phaseRef.current !== "active") return;
-        if (revealedRef.current) {
+        if (revealedRef.current && !animLockTimerRef.current) {
           socketRef.current?.emit(QUIZ_EVENTS.NEXT_QUESTION);
         } else if (speedModeRef.current === "BLITZ" && !answersVisibleRef.current) {
           socketRef.current?.emit(QUIZ_EVENTS.SHOW_ANSWERS);
@@ -1467,14 +1530,35 @@ function TeacherContent() {
                   </button>
                 )
               ) : pendingEnd ? (
-                <button onClick={nextQuestion} className="w-full py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors">
-                  Ergebnis anzeigen →
+                <button onClick={() => { cancelAutoCountdown(); nextQuestion(); }} disabled={animLocked} className="w-full py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-40 transition-colors">
+                  {autoCountdown !== null ? `Ergebnis in ${autoCountdown}… →` : "Ergebnis anzeigen →"}
                 </button>
               ) : (
-                <button onClick={nextQuestion} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-                  Nächste Frage →
+                <button onClick={() => { cancelAutoCountdown(); nextQuestion(); }} disabled={animLocked} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors">
+                  {autoCountdown !== null ? `Nächste Frage in ${autoCountdown}… →` : "Nächste Frage →"}
                 </button>
               )}
+              <div className="flex items-center justify-between mt-1">
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                  <button
+                    onClick={() => { setAutoAdvance(false); cancelAutoCountdown(); }}
+                    className={`px-3 py-1.5 transition-colors ${!autoAdvance ? "bg-gray-800 text-white" : "text-gray-400 hover:text-gray-600"}`}
+                  >Manuell</button>
+                  <button
+                    onClick={() => setAutoAdvance(true)}
+                    className={`px-3 py-1.5 transition-colors ${autoAdvance ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-600"}`}
+                  >Auto</button>
+                </div>
+                <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberSetting}
+                    onChange={(e) => setRememberSetting(e.target.checked)}
+                    className="rounded"
+                  />
+                  merken
+                </label>
+              </div>
             </>
           ) : (
             <p className="text-center text-xs text-gray-400 py-1">Quizzl läuft automatisch</p>
