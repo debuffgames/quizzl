@@ -80,6 +80,7 @@ function BeamerContent() {
   const socketRef = useRef<Socket | null>(null);
   const hasJoinedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerEndRef = useRef<number | null>(null);
   const questionFairZoneRef = useRef<number | null>(null);
   const prevShieldHpRef = useRef<[number, number] | null>(null);
   const prevBossHpRef = useRef<number | null>(null);
@@ -171,17 +172,20 @@ function BeamerContent() {
 
   const clearTimer = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    timerEndRef.current = null;
   };
 
   const startTimer = (secs: number) => {
     clearTimer();
+    timerEndRef.current = Date.now() + secs * 1000;
     setTimeLeft(secs);
     timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t === null || t <= 1) { clearTimer(); return 0; }
-        return t - 1;
-      });
-    }, 1000);
+      const end = timerEndRef.current;
+      if (end === null) { clearTimer(); return; }
+      const remaining = Math.max(0, Math.round((end - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) clearTimer();
+    }, 250);
   };
 
   // Boss timer tick — stops during pause
@@ -332,7 +336,10 @@ function BeamerContent() {
         setBeamerMode("TEAM_SHIELD");
       });
 
-      socket.on(QUIZ_EVENTS.TIMER_SYNC, ({ remainingSecs }: { remainingSecs: number }) => setTimeLeft(remainingSecs));
+      socket.on(QUIZ_EVENTS.TIMER_SYNC, ({ remainingSecs }: { remainingSecs: number }) => {
+        timerEndRef.current = Date.now() + remainingSecs * 1000;
+        setTimeLeft(remainingSecs);
+      });
       socket.on(QUIZ_EVENTS.RESPONSE_COUNT, (data: { answered: number; total: number }) => setResponseCount(data));
 
       socket.on(QUIZ_EVENTS.ANSWER_REVEAL, ({ correctAnswerIds, hiddenReveal: hr }: { correctAnswerIds: string[]; hiddenReveal?: { id: string; text: string } }) => {

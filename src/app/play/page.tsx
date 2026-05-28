@@ -482,6 +482,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
   useEffect(() => { teamInfoRef.current = teamInfo; }, [teamInfo]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timerEndRef = useRef<number | null>(null);
   const finalScoreRef = useRef(0);
   const prevPhaseRef = useRef<BeamerPhase>("waiting");
   const questionFairZoneRef = useRef<number | null>(null);
@@ -492,17 +493,20 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
 
   const clearTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    timerEndRef.current = null;
   }, []);
 
   const startTimer = useCallback((secs: number) => {
     clearTimer();
+    timerEndRef.current = Date.now() + secs * 1000;
     setTimeLeft(secs);
     timerRef.current = setInterval(() => {
-      setTimeLeft((t) => {
-        if (t === null || t <= 1) { clearTimer(); return 0; }
-        return t - 1;
-      });
-    }, 1000);
+      const end = timerEndRef.current;
+      if (end === null) { clearTimer(); return; }
+      const remaining = Math.max(0, Math.round((end - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0) clearTimer();
+    }, 250);
   }, [clearTimer]);
 
   const applyQuestion = useCallback((data: BeamerQuestion) => {
@@ -531,7 +535,10 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
 
   useEffect(() => {
     const onQuestion = (data: BeamerQuestion) => applyQuestion(data);
-    const onTimerSync = ({ remainingSecs }: { remainingSecs: number }) => setTimeLeft(remainingSecs);
+    const onTimerSync = ({ remainingSecs }: { remainingSecs: number }) => {
+      timerEndRef.current = Date.now() + remainingSecs * 1000;
+      setTimeLeft(remainingSecs);
+    };
     const onReveal = (data: RevealData) => {
       clearTimer();
       setReveal(data);
