@@ -621,7 +621,7 @@ function initTeams(io: Server, session: LiveSession, totalQuestions: number, avg
     }
   });
   // Fixed HP independent of team size — damage is averaged per question, not cumulative
-  session.teamShieldMax = Math.max(10, Math.ceil(avgPoints * totalQuestions * 0.5));
+  session.teamShieldMax = Math.max(10, Math.ceil(avgPoints * totalQuestions * 0.8));
   session.teamShields = [session.teamShieldMax, session.teamShieldMax];
 }
 
