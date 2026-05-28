@@ -472,30 +472,38 @@ function BeamerContent() {
     }
 
     if (shieldResult) {
+      const isDraw = shieldResult.winner === "draw";
       const winnerColor = shieldResult.winner === "Team Grün" ? "#22c55e" : "#f97316";
       return (
         <div className="flex flex-col min-h-screen bg-gray-900 text-white p-8 gap-8">
           {/* Hero */}
           <div className="flex flex-col items-center gap-4 pt-4">
-            <img
-              src={shieldResult.winner === "Team Grün" ? "/ch/edo_solo.png" : "/ch/parus.png"}
-              alt={shieldResult.winner}
-              className="h-64 w-auto object-contain select-none pointer-events-none"
-              draggable={false}
-            />
-            <h1 className="text-6xl font-black text-center" style={{ color: winnerColor }}>
-              {shieldResult.winner.toUpperCase()}
+            {isDraw ? (
+              <div className="flex items-end gap-6">
+                <img src="/ch/edo_solo.png" alt="Team Grün" className="h-56 w-auto object-contain select-none pointer-events-none" draggable={false} />
+                <img src="/ch/parus.png" alt="Team Orange" className="h-56 w-auto object-contain select-none pointer-events-none" draggable={false} />
+              </div>
+            ) : (
+              <img
+                src={shieldResult.winner === "Team Grün" ? "/ch/edo_solo.png" : "/ch/parus.png"}
+                alt={shieldResult.winner}
+                className="h-64 w-auto object-contain select-none pointer-events-none"
+                draggable={false}
+              />
+            )}
+            <h1 className="text-6xl font-black text-center" style={{ color: isDraw ? "#e2e8f0" : winnerColor }}>
+              {isDraw ? "UNENTSCHIEDEN" : shieldResult.winner.toUpperCase()}
             </h1>
-            <p className="text-2xl font-bold text-white/70">hat gewonnen!</p>
+            <p className="text-2xl font-bold text-white/70">{isDraw ? "Beide Teams gleichauf!" : "hat gewonnen!"}</p>
             {/* Shield bars */}
             <div className="w-full max-w-md mt-4 space-y-4">
               {shieldResult.shieldFinal.map((t) => {
                 const color = t.name === "Team Grün" ? "#22c55e" : "#f97316";
-                const isWinner = t.name === shieldResult.winner;
+                const isWinner = !isDraw && t.name === shieldResult.winner;
                 return (
-                  <div key={t.name} className={`rounded-2xl px-5 py-4 ${isWinner ? "bg-white/10" : "bg-white/5"}`} style={isWinner ? { outline: `2px solid ${color}` } : undefined}>
+                  <div key={t.name} className={`rounded-2xl px-5 py-4 ${isWinner || isDraw ? "bg-white/10" : "bg-white/5"}`} style={isWinner || isDraw ? { outline: `2px solid ${color}` } : undefined}>
                     <div className="flex items-center justify-between mb-2" style={{ color }}>
-                      <span className="font-bold text-lg">{t.name} {isWinner ? "🏆" : ""}</span>
+                      <span className="font-bold text-lg">{t.name} {isWinner ? "🏆" : isDraw ? "🤝" : ""}</span>
                       <span className="font-black text-xl tabular-nums">{t.hp} <span className="text-sm font-normal opacity-60">/ {t.maxHp}</span></span>
                     </div>
                     <div className="w-full bg-gray-700 rounded-full h-3">

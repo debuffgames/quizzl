@@ -455,7 +455,8 @@ export async function revealAnswer(io: Server, session: LiveSession, sessionMana
   if (session.beamerMode === "TEAM_SHIELD" && session.teamShields) {
     const loserIdx = session.teamShields.findIndex((hp) => hp <= 0);
     if (loserIdx >= 0) {
-      const winner = loserIdx === 0 ? "Team Orange" : "Team Grün";
+      const isDraw = session.teamShields[0] <= 0 && session.teamShields[1] <= 0;
+      const winner = isDraw ? "draw" : (loserIdx === 0 ? "Team Orange" : "Team Grün");
       session.pendingEnd = {
         winner, winType: "shield",
         shieldFinal: [
