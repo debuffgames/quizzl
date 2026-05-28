@@ -562,10 +562,21 @@ export function sendBossState(io: Server, session: LiveSession) {
 }
 
 export function sendShieldState(io: Server, session: LiveSession) {
+  const participants = Array.from(session.participants.values());
   const state = {
     teams: [
-      { name: "Team Grün", hp: session.teamShields?.[0] ?? 0, maxHp: session.teamShieldMax ?? 1 },
-      { name: "Team Orange", hp: session.teamShields?.[1] ?? 0, maxHp: session.teamShieldMax ?? 1 },
+      {
+        name: "Team Grün",
+        hp: session.teamShields?.[0] ?? 0,
+        maxHp: session.teamShieldMax ?? 1,
+        players: participants.filter((p) => p.teamIndex === 0).map((p) => p.displayName),
+      },
+      {
+        name: "Team Orange",
+        hp: session.teamShields?.[1] ?? 0,
+        maxHp: session.teamShieldMax ?? 1,
+        players: participants.filter((p) => p.teamIndex === 1).map((p) => p.displayName),
+      },
     ],
   };
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.SHIELD_STATE, state);

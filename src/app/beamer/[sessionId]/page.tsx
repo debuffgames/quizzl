@@ -22,7 +22,7 @@ interface QuestionData {
 }
 interface TopScore { rank: number; displayName: string; score: number; }
 interface BossState { hp: number; maxHp: number; timerEnd: number; ability: string | null; wrongCount: number; threshold: number; }
-interface ShieldTeam { name: string; hp: number; maxHp: number; }
+interface ShieldTeam { name: string; hp: number; maxHp: number; players?: string[]; }
 interface ShieldState { teams: ShieldTeam[]; }
 interface BossResult {
   winner: "class" | "boss";
@@ -1089,6 +1089,13 @@ function ShieldBattle({
             <div className="w-full bg-gray-700/50 rounded-full mt-3" style={{ height: 10 }}>
               <div className="rounded-full transition-all duration-500" style={{ width: `${pct}%`, height: 10, backgroundColor: color, boxShadow: `0 0 8px ${color}` }} />
             </div>
+            {t?.players && t.players.length > 0 && (
+              <div className="mt-3 w-full flex flex-col items-center gap-0.5">
+                {t.players.map((name) => (
+                  <p key={name} className="text-xs font-semibold truncate max-w-full" style={{ color: `${color}99` }}>{name}</p>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
