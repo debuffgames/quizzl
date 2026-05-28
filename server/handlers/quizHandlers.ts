@@ -514,11 +514,11 @@ function calcDamage(
 function applyBossWrongAnswer(session: LiveSession, eligibleCount: number): boolean {
   if (session.bossWrongCount === null) return false;
   session.bossWrongCount++;
-  const threshold = Math.max(1, Math.ceil(eligibleCount / 4));
+  // Minimum threshold of 3 so even tiny groups don't get punished by every wrong answer
+  const threshold = Math.max(3, Math.ceil(eligibleCount / 4));
   if (session.bossWrongCount % threshold === 0 && session.bossTimerEnd !== null) {
-    // Penalty = 10% of total boss timer, minimum 20 s
-    const penaltySecs = Math.max(20, Math.round((session.bossTimerSeconds ?? 300) * 0.1));
-    session.bossTimerEnd = Math.max(Date.now(), session.bossTimerEnd - penaltySecs * 1000);
+    // Flat 60 s penalty per attack
+    session.bossTimerEnd = Math.max(Date.now(), session.bossTimerEnd - 60_000);
     return true; // attacked
   }
   return false;
