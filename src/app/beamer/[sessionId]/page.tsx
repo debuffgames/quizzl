@@ -18,6 +18,7 @@ interface QuestionData {
   answersVisibleAt?: number | null;
   bossAbility?: string | null;
   hiddenAnswerId?: string | null;
+  fairZoneSecs?: number;
 }
 interface TopScore { rank: number; displayName: string; score: number; }
 interface BossState { hp: number; maxHp: number; timerEnd: number; ability: string | null; wrongCount: number; threshold: number; }
@@ -53,6 +54,8 @@ function BeamerContent() {
   const [topScores, setTopScores] = useState<TopScore[]>([]);
   const [responseCount, setResponseCount] = useState<{ answered: number; total: number } | null>(null);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [barFullSecs, setBarFullSecs] = useState<number | null>(null);
+  const [barFairZone, setBarFairZone] = useState<number | null>(null);
   const [beamerMode, setBeamerMode] = useState("STANDARD");
   const [speedMode, setSpeedMode] = useState("NORMAL");
   const [answersVisible, setAnswersVisible] = useState(false);
@@ -77,6 +80,7 @@ function BeamerContent() {
   const socketRef = useRef<Socket | null>(null);
   const hasJoinedRef = useRef(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const questionFairZoneRef = useRef<number | null>(null);
   const prevShieldHpRef = useRef<[number, number] | null>(null);
   const prevBossHpRef = useRef<number | null>(null);
   const prevBossTimerEndRef = useRef<number | null>(null);
@@ -193,6 +197,8 @@ function BeamerContent() {
     setCorrectIds([]);
     setResponseCount(null);
     setTimeLeft(null);
+    setBarFullSecs(null);
+    setBarFairZone(null);
     setAnswersVisible(false);
     setBossState(null);
     setShieldState(null);
@@ -258,13 +264,19 @@ function BeamerContent() {
         setQuestion(data);
         setCorrectIds([]);
         setResponseCount(null);
-        setAnswersVisible(data.answersVisibleAt !== null && data.answersVisibleAt !== undefined);
+        const visibleNow = data.answersVisibleAt != null;
+        setAnswersVisible(visibleNow);
         setHiddenReveal(null);
         prevShieldHpRef.current = null;
         setShieldAnimTrigger(null);
         if (data.speedMode) setSpeedMode(data.speedMode);
         setPhase("question");
-        if (data.timeLimitSecs) startTimer(data.remainingSecs ?? data.timeLimitSecs);
+        questionFairZoneRef.current = data.fairZoneSecs ?? null;
+        if (data.timeLimitSecs) {
+          setBarFullSecs(data.timeLimitSecs);
+          startTimer(data.remainingSecs ?? data.timeLimitSecs);
+        }
+        setBarFairZone(visibleNow ? (data.fairZoneSecs ?? null) : null);
       });
 
       socket.on(QUIZ_EVENTS.PAUSE, () => { setPaused(true); clearTimer(); });
@@ -272,7 +284,14 @@ function BeamerContent() {
         setPaused(false);
         if (data?.remainingSecs) startTimer(data.remainingSecs);
       });
-      socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, () => setAnswersVisible(true));
+      socket.on(QUIZ_EVENTS.ANSWERS_VISIBLE, (data: { startsAt: number; timeLimitSecs: number | null }) => {
+        setAnswersVisible(true);
+        if (speedModeRef.current === "BLITZ" && data.timeLimitSecs) {
+          setBarFullSecs(data.timeLimitSecs);
+          startTimer(data.timeLimitSecs);
+          setBarFairZone(questionFairZoneRef.current);
+        }
+      });
       socket.on(QUIZ_EVENTS.SESSION_STARTED, (data: { beamerMode?: string; speedMode?: string }) => {
         resetForNewSession(data.beamerMode, data.speedMode);
       });
@@ -691,15 +710,15 @@ function BeamerContent() {
       {/* Header row */}
       <div className="flex items-center justify-between">
         <span className="text-white/50 text-xl">Frage {question.index + 1} / {question.total}</span>
-        {timeLeft !== null && (
-          <span className={`text-5xl font-bold tabular-nums ${timeLeft <= 5 ? "text-red-400" : "text-white"}`}>
-            {timeLeft}
-          </span>
-        )}
         {responseCount && (
           <span className="text-white/50 text-xl">{responseCount.answered} / {responseCount.total}</span>
         )}
       </div>
+
+      {/* Timer bar */}
+      {timeLeft !== null && barFullSecs !== null && (
+        <TimerBar timeLeft={timeLeft} timeLimitSecs={barFullSecs} fairZoneSecs={barFairZone} />
+      )}
 
       {/* Response progress bar */}
       {responseCount && (
@@ -864,6 +883,34 @@ function BeamerContent() {
           {isRevealed ? "→ Nächste Frage" : speedMode === "BLITZ" && !answersVisible ? "→ Antworten zeigen" : "→ Auflösen"}
         </span>
       </div>
+    </div>
+  );
+}
+
+function TimerBar({ timeLeft, timeLimitSecs, fairZoneSecs }: {
+  timeLeft: number;
+  timeLimitSecs: number;
+  fairZoneSecs?: number | null;
+}) {
+  const total = Math.max(timeLimitSecs, 1);
+  const pct = Math.max(0, Math.min(100, (timeLeft / total) * 100));
+  const fairPct = fairZoneSecs ? Math.min(100, (fairZoneSecs / total) * 100) : 0;
+  const isUrgent = timeLeft <= 5;
+  const inFairZone = !!fairZoneSecs && timeLeft >= total - fairZoneSecs;
+  return (
+    <div className="flex items-center gap-3 w-full">
+      <div className="relative flex-1 h-4 bg-white/10 rounded-full overflow-hidden">
+        {fairPct > 0 && (
+          <div className="absolute left-0 top-0 h-full bg-emerald-400/25" style={{ width: `${fairPct}%` }} />
+        )}
+        <div
+          className={`absolute left-0 top-0 h-full rounded-full ${isUrgent ? "bg-red-400" : inFairZone ? "bg-emerald-400" : "bg-white/60"}`}
+          style={{ width: `${pct}%`, transition: "width 1s linear" }}
+        />
+      </div>
+      <span className={`font-black text-2xl tabular-nums min-w-[3.5rem] text-right ${isUrgent ? "text-red-400 animate-pulse" : "text-white/80"}`}>
+        {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
+      </span>
     </div>
   );
 }

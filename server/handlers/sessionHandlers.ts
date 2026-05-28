@@ -3,7 +3,7 @@ import { prisma } from "../../src/lib/db/prisma";
 import { verifyModuleToken } from "../../src/lib/auth/moduleToken";
 import { QUIZ_EVENTS } from "../../src/lib/socket/events";
 import type { SessionManager } from "../sessionManager";
-import { sendBossState, sendShieldState } from "./quizHandlers";
+import { sendBossState, sendShieldState, calcFairZone } from "./quizHandlers";
 
 const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
 
@@ -246,6 +246,10 @@ async function sendCurrentQuestion(io: Server, socketId: string, session: import
     ? (session.participants.get(participantId)?.answeredCurrentQuestion ?? false)
     : undefined;
 
+  const fairZoneSecs = session.speedMode !== "NORMAL" && question
+    ? calcFairZone(question, session.speedMode)
+    : undefined;
+
   io.to(socketId).emit(QUIZ_EVENTS.QUESTION, {
     id: question.id,
     text: includeText ? question.text : undefined,
@@ -271,5 +275,6 @@ async function sendCurrentQuestion(io: Server, socketId: string, session: import
         : undefined,
     hiddenAnswerId: isBeamer ? session.hiddenAnswerId : undefined,
     alreadyAnswered: alreadyAnswered || undefined,
+    fairZoneSecs: !isTeacher ? fairZoneSecs : undefined,
   });
 }

@@ -267,6 +267,7 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
     speedMode: session.speedMode,
     answersVisibleAt: session.answersVisibleAt, // null=locked (BLITZ); epoch ms=visible now
     bossAbility: session.currentBossAbility,   // null if not BOSS mode
+    fairZoneSecs: session.speedMode !== "NORMAL" ? calcFairZone(question, session.speedMode) : undefined,
   };
 
   // Students: no text/answer text; hidden answer stays hidden (they don't need its ID)
@@ -502,7 +503,7 @@ export async function revealAnswer(io: Server, session: LiveSession, sessionMana
 // Fair zone: time at the start of a BLITZ/SUPER_BLITZ question where full points are awarded.
 // BLITZ:       0.5s × number of answer options
 // SUPER_BLITZ: same base + (reading-time estimate / 3)
-function calcFairZone(
+export function calcFairZone(
   q: { text: string; answerType: string; answers: { text: string; isCorrect: boolean }[] },
   speedMode: string,
 ): number {

@@ -34,6 +34,7 @@ interface BeamerQuestion {
   answersVisibleAt?: number | null;
   bossAbility?: string | null;
   alreadyAnswered?: boolean;
+  fairZoneSecs?: number;
 }
 
 interface RevealData {
@@ -54,6 +55,8 @@ interface CardQuestion {
   index: number;
   total: number;
   timeLimitSecs?: number | null;
+  timerFull?: number | null;
+  fairZoneSecs?: number | null;
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
@@ -369,7 +372,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
   if (!q) return <Shell><Spinner /></Shell>;
   const isMultiple = q.answerType === "MULTIPLE_CHOICE";
   const hasSelection = selectedIds.length > 0;
-  const cardQ: CardQuestion = { text: q.text, answerType: q.answerType, index: qIndex, total: questions.length, timeLimitSecs: q.timeLimitSecs };
+  const cardQ: CardQuestion = { text: q.text, answerType: q.answerType, index: qIndex, total: questions.length, timeLimitSecs: q.timeLimitSecs, timerFull: q.timeLimitSecs, fairZoneSecs: null };
 
   if (phase === "revealed" && reveal) {
     const correct = reveal.scoreGained > 0;
@@ -468,6 +471,8 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
   const [topScores, setTopScores] = useState<TopScore[]>([]);
   const [finalScore, setFinalScore] = useState(0);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const [barFullSecs, setBarFullSecs] = useState<number | null>(null);
+  const [barFairZone, setBarFairZone] = useState<number | null>(null);
   const [answersUnlocked, setAnswersUnlocked] = useState(true);
   const [teamInfo, setTeamInfo] = useState<{ teamIndex: number; teamName: string } | null>(null);
   const [myTeamHp, setMyTeamHp] = useState<{ hp: number; maxHp: number } | null>(null);
@@ -479,6 +484,9 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const finalScoreRef = useRef(0);
   const prevPhaseRef = useRef<BeamerPhase>("waiting");
+  const questionFairZoneRef = useRef<number | null>(null);
+  const questionRef = useRef<BeamerQuestion | null>(null);
+  useEffect(() => { questionRef.current = question; }, [question]);
 
   useEffect(() => { finalScoreRef.current = finalScore; }, [finalScore]);
 
@@ -502,9 +510,12 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
     setQuestion(data);
     setReveal(null);
     const isBlitz = data.speedMode === "BLITZ";
-    const visibleNow = data.answersVisibleAt !== null && data.answersVisibleAt !== undefined;
+    const visibleNow = data.answersVisibleAt != null;
     setAnswersUnlocked(!isBlitz || visibleNow);
     setDancing(data.bossAbility === "DANCING_BUZZERS");
+    questionFairZoneRef.current = data.fairZoneSecs ?? null;
+    if (data.timeLimitSecs) setBarFullSecs(data.timeLimitSecs);
+    setBarFairZone(visibleNow ? (data.fairZoneSecs ?? null) : null);
     if (data.alreadyAnswered) {
       setSelectedIds([]);
       setSubmitted(true);
@@ -541,7 +552,14 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
       setPhase("ended");
       window.parent.postMessage({ type: "COMPLETE", score: finalScoreRef.current }, "*");
     };
-    const onAnswersVisible = () => setAnswersUnlocked(true);
+    const onAnswersVisible = (data: { startsAt?: number; timeLimitSecs?: number | null }) => {
+      setAnswersUnlocked(true);
+      if (questionRef.current?.speedMode === "BLITZ" && data.timeLimitSecs) {
+        startTimer(data.timeLimitSecs);
+        setBarFullSecs(data.timeLimitSecs);
+        setBarFairZone(questionFairZoneRef.current);
+      }
+    };
     const onTeamAssigned = (data: { teamIndex: number; teamName: string }) => setTeamInfo(data);
     const onShieldState = (data: { teams: { name: string; hp: number; maxHp: number }[] }) => {
       const ti = teamInfoRef.current;
@@ -700,7 +718,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
   }
 
   if (!question) return <Shell><Spinner /></Shell>;
-  const cardQ: CardQuestion = { text: question.text, answerType: question.answerType, index: question.index, total: question.total };
+  const cardQ: CardQuestion = { text: question.text, answerType: question.answerType, index: question.index, total: question.total, timerFull: barFullSecs, fairZoneSecs: barFairZone };
 
   return (
     <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}>
@@ -756,6 +774,34 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
 
 // ─── Shared layout components ─────────────────────────────────────────────────
 
+function TimerBar({ timeLeft, timeLimitSecs, fairZoneSecs }: {
+  timeLeft: number;
+  timeLimitSecs: number;
+  fairZoneSecs?: number | null;
+}) {
+  const total = Math.max(timeLimitSecs, 1);
+  const pct = Math.max(0, Math.min(100, (timeLeft / total) * 100));
+  const fairPct = fairZoneSecs ? Math.min(100, (fairZoneSecs / total) * 100) : 0;
+  const isUrgent = timeLeft <= 5;
+  const inFairZone = !!fairZoneSecs && timeLeft >= total - fairZoneSecs;
+  return (
+    <div className="flex items-center gap-2 w-full">
+      <div className="relative flex-1 h-2.5 bg-gray-200 rounded-full overflow-hidden">
+        {fairPct > 0 && (
+          <div className="absolute left-0 top-0 h-full bg-emerald-100" style={{ width: `${fairPct}%` }} />
+        )}
+        <div
+          className={`absolute left-0 top-0 h-full rounded-full ${isUrgent ? "bg-red-400" : inFairZone ? "bg-emerald-400" : "bg-indigo-400"}`}
+          style={{ width: `${pct}%`, transition: "width 1s linear" }}
+        />
+      </div>
+      <span className={`font-black text-sm tabular-nums whitespace-nowrap ${isUrgent ? "text-red-600 animate-pulse" : "text-gray-500"}`}>
+        {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
+      </span>
+    </div>
+  );
+}
+
 function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, showLogo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
@@ -803,16 +849,16 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
       )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]">
         {question && (
-          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-            <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-              Frage {question.index + 1}/{question.total}
-            </span>
-            {timeLeft !== null && timeLeft !== undefined && (
-              <span className={`font-black text-sm tabular-nums px-2.5 py-0.5 rounded-full ${
-                timeLeft <= 5 ? "bg-red-100 text-red-600 animate-pulse" : "bg-gray-100 text-gray-600"
-              }`}>
-                {String(Math.floor(timeLeft / 60)).padStart(2, "0")}:{String(timeLeft % 60).padStart(2, "0")}
+          <div className="border-b border-gray-100">
+            <div className="flex items-center justify-between px-5 py-3">
+              <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                Frage {question.index + 1}/{question.total}
               </span>
+            </div>
+            {timeLeft !== null && timeLeft !== undefined && question.timerFull != null && (
+              <div className="px-5 pb-3">
+                <TimerBar timeLeft={timeLeft} timeLimitSecs={question.timerFull} fairZoneSecs={question.fairZoneSecs} />
+              </div>
             )}
           </div>
         )}
