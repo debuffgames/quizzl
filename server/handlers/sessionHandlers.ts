@@ -9,7 +9,7 @@ const MODULE_SECRET = process.env.QUIZZL_MODULE_SECRET ?? "";
 
 export function registerSessionHandlers(io: Server, socket: Socket, sessionManager: SessionManager) {
   // Student joins a quiz session
-  socket.on(QUIZ_EVENTS.JOIN, async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; error?: string; gameMode?: string; beamerMode?: string }) => void) => {
+  socket.on(QUIZ_EVENTS.JOIN, async (data: { lobbyId: string; token: string }, ack?: (r: { ok: boolean; error?: string; gameMode?: string; beamerMode?: string; displayMode?: string }) => void) => {
     const payload = verifyModuleToken(data.token, MODULE_SECRET);
     if (!payload || payload.role !== "student") {
       ack?.({ ok: false, error: "Ungültiger Token" });
@@ -69,7 +69,7 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       });
     }
 
-    ack?.({ ok: true, gameMode: session.gameMode, beamerMode: session.beamerMode });
+    ack?.({ ok: true, gameMode: session.gameMode, beamerMode: session.beamerMode, displayMode: session.displayMode });
 
     if (session.paused) socket.emit(QUIZ_EVENTS.PAUSE);
 
@@ -207,6 +207,12 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
     socket.join(session.sessionId);
     socket.join(`${session.sessionId}:beamer`);
 
+    // Beamer connected → switch to BEAMER mode (students see buzzer-only)
+    if (session.displayMode !== "BEAMER") {
+      session.displayMode = "BEAMER";
+      await broadcastDisplayModeChange(io, session, "BEAMER");
+    }
+
     ack?.({ ok: true, beamerMode: session.beamerMode, speedMode: session.speedMode });
 
     if (session.paused) socket.emit(QUIZ_EVENTS.PAUSE);
@@ -217,6 +223,39 @@ export function registerSessionHandlers(io: Server, socket: Socket, sessionManag
       if (session.beamerMode === "TEAM_SHIELD") sendShieldState(io, session);
     }
   });
+}
+
+// ─── Display-mode broadcast (called on beamer connect/disconnect) ─────────────
+
+export async function broadcastDisplayModeChange(io: Server, session: import("../sessionManager").LiveSession, mode: "BEAMER" | "UNIBEAM") {
+  if (session.currentQuestionIndex < 0) {
+    io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.DISPLAY_MODE_CHANGED, { mode });
+    return;
+  }
+
+  const quiz = await prisma.quiz.findUnique({
+    where: { id: session.quizId },
+    include: { questions: { orderBy: { sortOrder: "asc" }, include: { answers: { orderBy: { sortOrder: "asc" } } } } },
+  });
+  const question = quiz?.questions[session.currentQuestionIndex];
+  if (!question) {
+    io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.DISPLAY_MODE_CHANGED, { mode });
+    return;
+  }
+
+  const questionPatch = mode === "UNIBEAM"
+    ? {
+        text: question.text,
+        answers: question.answers.map((a) => ({ id: a.id, text: a.text, sortOrder: a.sortOrder })),
+        bossAbility: session.currentBossAbility,
+      }
+    : {
+        text: undefined,
+        answers: question.answers.map((a) => ({ id: a.id, text: undefined, sortOrder: a.sortOrder })),
+        bossAbility: session.currentBossAbility === "DANCING_BUZZERS" ? "DANCING_BUZZERS" : null,
+      };
+
+  io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.DISPLAY_MODE_CHANGED, { mode, question: questionPatch });
 }
 
 async function sendCurrentQuestion(io: Server, socketId: string, session: import("../sessionManager").LiveSession, _sessionManager: SessionManager, participantId?: string) {
@@ -241,7 +280,7 @@ async function sendCurrentQuestion(io: Server, socketId: string, session: import
 
   const isBeamer = socketId === session.beamerSocketId;
   const isTeacher = socketId === session.teacherSocketId;
-  const includeText = session.gameMode === "AUTONOMOUS" || isBeamer || isTeacher;
+  const includeText = session.gameMode === "AUTONOMOUS" || isBeamer || isTeacher || session.displayMode === "UNIBEAM";
   const alreadyAnswered = participantId
     ? (session.participants.get(participantId)?.answeredCurrentQuestion ?? false)
     : undefined;

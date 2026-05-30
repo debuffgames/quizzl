@@ -1,6 +1,6 @@
 import { createServer, IncomingMessage, ServerResponse } from "http";
 import { Server } from "socket.io";
-import { registerSessionHandlers } from "./handlers/sessionHandlers";
+import { registerSessionHandlers, broadcastDisplayModeChange } from "./handlers/sessionHandlers";
 import { registerQuizHandlers, advanceToNextQuestion } from "./handlers/quizHandlers";
 import { registerResponseHandlers } from "./handlers/responseHandlers";
 import { sessionManager } from "./sessionManager";
@@ -118,14 +118,29 @@ io.on("connection", (socket) => {
   registerQuizHandlers(io, socket, sessionManager);
   registerResponseHandlers(io, socket, sessionManager);
 
-  socket.on("disconnect", () => {
+  socket.on("disconnect", async () => {
     console.log(`[Socket] Client disconnected: ${socket.id}`);
+
+    // Check for beamer disconnect before removeParticipant clears the session lookup
+    const beamerSession = sessionManager.getSessionBySocket(socket.id);
+    const isBeamer = beamerSession?.beamerSocketId === socket.id;
+
     const removed = sessionManager.removeParticipant(socket.id);
     if (removed?.session.teacherSocketId) {
       io.to(removed.session.teacherSocketId).emit(QUIZ_EVENTS.PLAYER_LEFT, {
         participantId: removed.participant.participantId,
       });
     }
+
+    if (isBeamer && beamerSession) {
+      beamerSession.beamerSocketId = null;
+      if (beamerSession.displayMode === "BEAMER") {
+        beamerSession.displayMode = "UNIBEAM";
+        await broadcastDisplayModeChange(io, beamerSession, "UNIBEAM");
+        console.log(`[Quizzl] Beamer disconnected for session ${beamerSession.sessionId} — switched to UNIBEAM`);
+      }
+    }
+
     sessionManager.removeBeamerSocket(socket.id);
   });
 });

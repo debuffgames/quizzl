@@ -71,7 +71,7 @@ type Init =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "autonomous"; questions: FullQuestion[]; socket: Socket }
-  | { status: "beamer"; socket: Socket; beamerMode: string };
+  | { status: "beamer"; socket: Socket; beamerMode: string; displayMode: "BEAMER" | "UNIBEAM" };
 
 function PlayContent() {
   const searchParams = useSearchParams();
@@ -111,7 +111,7 @@ function PlayContent() {
 
       socket.on("connect", () => {
         setReconnecting(false);
-        socket.emit(QUIZ_EVENTS.JOIN, { lobbyId, token }, async (ack: { ok: boolean; gameMode?: string; beamerMode?: string; error?: string }) => {
+        socket.emit(QUIZ_EVENTS.JOIN, { lobbyId, token }, async (ack: { ok: boolean; gameMode?: string; beamerMode?: string; displayMode?: string; error?: string }) => {
           if (!ack.ok) {
             if (!hasJoinedRef.current) setInit({ status: "error", message: ack.error ?? "Beitreten fehlgeschlagen" });
             return;
@@ -134,7 +134,7 @@ function PlayContent() {
               setInit({ status: "error", message: "Quiz konnte nicht geladen werden" });
             }
           } else {
-            setReady({ status: "beamer", socket, beamerMode: ack.beamerMode ?? "STANDARD" });
+            setReady({ status: "beamer", socket, beamerMode: ack.beamerMode ?? "STANDARD", displayMode: (ack.displayMode as "BEAMER" | "UNIBEAM") ?? "UNIBEAM" });
           }
         });
       });
@@ -162,7 +162,7 @@ function PlayContent() {
     return <AutonomousPlay questions={init.questions} socket={init.socket} reconnecting={reconnecting} />;
   }
 
-  return <BeamerPlay socket={init.socket} reconnecting={reconnecting} initialBeamerMode={init.beamerMode} />;
+  return <BeamerPlay socket={init.socket} reconnecting={reconnecting} initialBeamerMode={init.beamerMode} initialDisplayMode={init.displayMode} />;
 }
 
 // ─── AUTONOMOUS mode — fully client-side ──────────────────────────────────────
@@ -461,7 +461,7 @@ function AutonomousPlay({ questions, socket, reconnecting }: { questions: FullQu
 
 // ─── BEAMER mode — server-controlled ──────────────────────────────────────────
 
-function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socket; reconnecting: boolean; initialBeamerMode: string }) {
+function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMode }: { socket: Socket; reconnecting: boolean; initialBeamerMode: string; initialDisplayMode: "BEAMER" | "UNIBEAM" }) {
   type BeamerPhase = "waiting" | "question" | "answered" | "revealed" | "scoreboard" | "ended" | "paused";
   const [phase, setPhase] = useState<BeamerPhase>("waiting");
   const [question, setQuestion] = useState<BeamerQuestion | null>(null);
@@ -478,6 +478,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
   const [myTeamHp, setMyTeamHp] = useState<{ hp: number; maxHp: number } | null>(null);
   const [dancing, setDancing] = useState(false);
   const [bossMode, setBossMode] = useState(false);
+  const [displayMode, setDisplayMode] = useState<"BEAMER" | "UNIBEAM">(initialDisplayMode);
   const teamInfoRef = useRef<{ teamIndex: number; teamName: string } | null>(null);
   useEffect(() => { teamInfoRef.current = teamInfo; }, [teamInfo]);
 
@@ -578,6 +579,13 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
       setBossMode(true);
       setDancing(data.ability === "DANCING_BUZZERS");
     };
+    const onDisplayModeChanged = (data: { mode: "BEAMER" | "UNIBEAM"; question?: { text?: string; answers?: BeamerQuestion["answers"]; bossAbility?: string | null } }) => {
+      setDisplayMode(data.mode);
+      if (data.question) {
+        setQuestion((q) => q ? { ...q, text: data.question!.text, answers: data.question!.answers ?? q.answers, bossAbility: data.question!.bossAbility ?? q.bossAbility } : q);
+        setDancing(data.question.bossAbility === "DANCING_BUZZERS");
+      }
+    };
     const onPause = () => {
       setPhase((p) => { prevPhaseRef.current = p; return "paused"; });
       clearTimer();
@@ -601,6 +609,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
     socket.on(QUIZ_EVENTS.TEAM_ASSIGNED, onTeamAssigned);
     socket.on(QUIZ_EVENTS.SHIELD_STATE, onShieldState);
     socket.on(QUIZ_EVENTS.BOSS_STATE, onBossState);
+    socket.on(QUIZ_EVENTS.DISPLAY_MODE_CHANGED, onDisplayModeChanged);
     window.addEventListener("message", onMessage);
     return () => {
       socket.off(QUIZ_EVENTS.QUESTION, onQuestion);
@@ -614,6 +623,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
       socket.off(QUIZ_EVENTS.TEAM_ASSIGNED, onTeamAssigned);
       socket.off(QUIZ_EVENTS.SHIELD_STATE, onShieldState);
       socket.off(QUIZ_EVENTS.BOSS_STATE, onBossState);
+      socket.off(QUIZ_EVENTS.DISPLAY_MODE_CHANGED, onDisplayModeChanged);
       window.removeEventListener("message", onMessage);
     };
   }, [socket, applyQuestion, clearTimer, startTimer]);
@@ -751,6 +761,34 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode }: { socket: Socke
             </button>
           )}
         </>
+      ) : displayMode === "UNIBEAM" ? (
+        <div className="flex flex-col gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5">
+            {question.answers.map((a) => {
+              const color = ANSWER_COLORS[a.sortOrder % ANSWER_COLORS.length];
+              const isSelected = selectedIds.includes(a.id);
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => toggleAnswer(a.id)}
+                  disabled={submitted}
+                  className={`flex items-center justify-center px-3 py-4 rounded-2xl font-semibold transition-all active:scale-95 text-center text-sm leading-tight
+                    ${color.bg} ${color.text}
+                    ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
+                    ${submitted ? "opacity-50" : "cursor-pointer"}
+                  `}
+                >
+                  {a.text ?? color.shape}
+                </button>
+              );
+            })}
+          </div>
+          {question.answerType === "MULTIPLE_CHOICE" && selectedIds.length > 0 && (
+            <button onClick={submitMultiple} className="w-full py-3 bg-[#02512c] text-white font-bold text-sm rounded-xl active:scale-95 transition-transform">
+              Antworten abgeben ({selectedIds.length})
+            </button>
+          )}
+        </div>
       ) : (
         <div className="grid grid-cols-2 gap-3">
           {question.answers.map((a) => {
@@ -1017,7 +1055,7 @@ function DancingBuzzers({
             key={a.id}
             onClick={() => onAnswer(a.id)}
             disabled={submitted}
-            className={`absolute flex items-center justify-center rounded-2xl font-bold text-2xl shadow-lg active:scale-95 ${color.bg} ${color.text} ${selectedIds.includes(a.id) ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-90" : ""}`}
+            className={`absolute flex items-center justify-center rounded-2xl font-bold shadow-lg active:scale-95 ${color.bg} ${color.text} ${selectedIds.includes(a.id) ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-90" : ""}`}
             style={{
               width: `${DANCING_BUTTON_SIZE}px`,
               height: `${DANCING_BUTTON_SIZE}px`,
@@ -1026,7 +1064,10 @@ function DancingBuzzers({
               transition: `left ${dur}s cubic-bezier(0.25,0.46,0.45,0.94), top ${dur}s cubic-bezier(0.34,1.56,0.64,1)`,
             }}
           >
-            {color.shape}
+            {a.text
+              ? <span className="text-xs font-semibold text-center leading-tight px-1.5">{a.text}</span>
+              : <span className="text-2xl">{color.shape}</span>
+            }
           </button>
         );
       })}
