@@ -484,6 +484,25 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
   const displayModeRef = useRef<"BEAMER" | "UNIBEAM">(initialDisplayMode);
   useEffect(() => { displayModeRef.current = displayMode; }, [displayMode]);
 
+  // UNIBEAM boss + shield overlay state
+  const [bossDisplayState, setBossDisplayState] = useState<{ hp: number; maxHp: number; timerEnd: number; timerFrozen?: boolean } | null>(null);
+  const [bossHit, setBossHit] = useState(false);
+  const [playerHit, setPlayerHit] = useState(false);
+  const [nowTick, setNowTick] = useState(Date.now());
+  const [fullShieldState, setFullShieldState] = useState<{ teams: { name: string; hp: number; maxHp: number }[] } | null>(null);
+  const [shieldDmgTeam, setShieldDmgTeam] = useState<0 | 1 | null>(null);
+  const prevBossHpRef = useRef<number | null>(null);
+  const prevBossTimerEndRef = useRef<number | null>(null);
+  const prevShieldHpForRevealRef = useRef<[number, number] | null>(null);
+  const fullShieldStateRef = useRef<{ teams: { name: string; hp: number; maxHp: number }[] } | null>(null);
+  useEffect(() => { fullShieldStateRef.current = fullShieldState; }, [fullShieldState]);
+
+  useEffect(() => {
+    if (!bossDisplayState) return;
+    const id = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [!!bossDisplayState]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerEndRef = useRef<number | null>(null);
   const finalScoreRef = useRef(0);
@@ -547,6 +566,9 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
       setReveal(data);
       setFinalScore(data.totalScore);
       setPhase("revealed");
+      if (fullShieldStateRef.current) {
+        prevShieldHpForRevealRef.current = [fullShieldStateRef.current.teams[0].hp, fullShieldStateRef.current.teams[1].hp];
+      }
       setQuestion((q) => {
         if (q) window.parent.postMessage({ type: "PROGRESS", progress: (q.index + 1) / q.total, score: data.totalScore }, "*");
         return q;
@@ -574,14 +596,34 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
     };
     const onTeamAssigned = (data: { teamIndex: number; teamName: string }) => setTeamInfo(data);
     const onShieldState = (data: { teams: { name: string; hp: number; maxHp: number }[] }) => {
+      if (displayModeRef.current === "UNIBEAM") {
+        const pre = prevShieldHpForRevealRef.current;
+        if (pre) {
+          prevShieldHpForRevealRef.current = null;
+          const post: [number, number] = [data.teams[0].hp, data.teams[1].hp];
+          if (pre[0] > post[0]) { setShieldDmgTeam(0); setTimeout(() => setShieldDmgTeam(null), 900); }
+          else if (pre[1] > post[1]) { setShieldDmgTeam(1); setTimeout(() => setShieldDmgTeam(null), 900); }
+        }
+        setFullShieldState(data);
+      }
       const ti = teamInfoRef.current;
-      if (ti === null) return;
-      const myTeam = data.teams[ti.teamIndex];
-      if (myTeam) setMyTeamHp({ hp: myTeam.hp, maxHp: myTeam.maxHp });
+      if (ti !== null) {
+        const myTeam = data.teams[ti.teamIndex];
+        if (myTeam) setMyTeamHp({ hp: myTeam.hp, maxHp: myTeam.maxHp });
+      }
     };
-    const onBossState = (data: { ability?: string | null }) => {
+    const onBossState = (data: { hp: number; maxHp: number; timerEnd: number; timerFrozen?: boolean; ability?: string | null }) => {
       setBossMode(true);
       setDancing(data.ability === "DANCING_BUZZERS");
+      if (displayModeRef.current === "UNIBEAM") {
+        const prevHp = prevBossHpRef.current;
+        const prevTimerEnd = prevBossTimerEndRef.current;
+        prevBossHpRef.current = data.hp;
+        prevBossTimerEndRef.current = data.timerEnd;
+        if (prevHp !== null && data.hp < prevHp) { setBossHit(true); setTimeout(() => setBossHit(false), 500); }
+        if (prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000) { setPlayerHit(true); setTimeout(() => setPlayerHit(false), 500); }
+        setBossDisplayState({ hp: data.hp, maxHp: data.maxHp, timerEnd: data.timerEnd, timerFrozen: data.timerFrozen });
+      }
     };
     const onDisplayModeChanged = (data: { mode: "BEAMER" | "UNIBEAM"; question?: { text?: string; answers?: BeamerQuestion["answers"]; bossAbility?: string | null } }) => {
       setDisplayMode(data.mode);
@@ -706,7 +748,14 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
     const correct = reveal.scoreGained > 0;
     const cardQ = question ? { text: question.text, answerType: question.answerType, index: question.index, total: question.total } : null;
     return (
-      <GameCard question={cardQ} timeLeft={null} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}>
+      <GameCard question={cardQ} timeLeft={null} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}
+        bossDisplayState={displayMode === "UNIBEAM" ? bossDisplayState : null}
+        bossHit={displayMode === "UNIBEAM" ? bossHit : false}
+        playerHit={displayMode === "UNIBEAM" ? playerHit : false}
+        nowTick={nowTick}
+        fullShieldState={displayMode === "UNIBEAM" ? fullShieldState : null}
+        shieldDmgTeam={displayMode === "UNIBEAM" ? shieldDmgTeam : null}
+      >
         <div className="flex flex-col items-center gap-1 mb-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${correct ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
             {correct ? "✓" : "✗"}
@@ -745,7 +794,14 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
   const cardQ: CardQuestion = { text: question.text, answerType: question.answerType, index: question.index, total: question.total, timerFull: barFullSecs, fairZoneSecs: barFairZone };
 
   return (
-    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}>
+    <GameCard question={cardQ} timeLeft={timeLeft} teamInfo={teamInfo} myTeamHp={myTeamHp} bossMode={bossMode}
+      bossDisplayState={displayMode === "UNIBEAM" ? bossDisplayState : null}
+      bossHit={displayMode === "UNIBEAM" ? bossHit : false}
+      playerHit={displayMode === "UNIBEAM" ? playerHit : false}
+      nowTick={nowTick}
+      fullShieldState={displayMode === "UNIBEAM" ? fullShieldState : null}
+      shieldDmgTeam={displayMode === "UNIBEAM" ? shieldDmgTeam : null}
+    >
       {phase === "answered" ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6">
           <Spinner />
@@ -853,30 +909,112 @@ function TimerBar({ timeLeft, timeLimitSecs, fairZoneSecs }: {
   );
 }
 
-function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, showLogo }: {
+function fmtMs(ms: number) {
+  const s = Math.ceil(Math.max(0, ms) / 1000);
+  return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+}
+
+const TEAM_COLORS = ["#22c55e", "#f97316"] as const;
+
+function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, fullShieldState, shieldDmgTeam, showLogo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
   teamInfo?: { teamIndex: number; teamName: string } | null;
   myTeamHp?: { hp: number; maxHp: number } | null;
   bossMode?: boolean;
+  bossDisplayState?: { hp: number; maxHp: number; timerEnd: number; timerFrozen?: boolean } | null;
+  bossHit?: boolean;
+  playerHit?: boolean;
+  nowTick?: number;
+  fullShieldState?: { teams: { name: string; hp: number; maxHp: number }[] } | null;
+  shieldDmgTeam?: 0 | 1 | null;
   showLogo?: boolean;
 }) {
-  const teamColor = teamInfo?.teamIndex === 0 ? "#22c55e" : "#f97316";
+  const teamColor = teamInfo?.teamIndex === 0 ? TEAM_COLORS[0] : TEAM_COLORS[1];
+  const hasOverlay = !!(bossDisplayState || fullShieldState);
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center px-4 py-6">
-      {showLogo && !teamInfo && !bossMode && (
-        <img src="/quizzl_logo.png" alt="Quizzl" className="w-full max-w-sm mb-4 px-8 select-none" draggable={false} />
+    <div className={`min-h-screen bg-gray-50 flex flex-col items-center px-4 py-4 ${hasOverlay ? "justify-start" : "justify-center"}`}>
+      {/* Boss overlay (UNIBEAM only) */}
+      {bossDisplayState && (() => {
+        const timerMs = bossDisplayState.timerFrozen
+          ? Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()))
+          : Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()));
+        const bossHpPct = Math.max(0, Math.round((bossDisplayState.hp / Math.max(bossDisplayState.maxHp, 1)) * 100));
+        return (
+          <>
+            <style>{`
+              @keyframes boss-bash{0%,100%{transform:translate(0,0)}20%{transform:translate(-4px,2px)}40%{transform:translate(4px,-2px)}60%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}}
+              .boss-bash{animation:boss-bash 0.45s ease-out}
+              @keyframes player-bash{0%,100%{transform:translate(0,0)}20%{transform:translate(0,6px)}40%{transform:translate(0,-4px)}60%{transform:translate(0,2px)}80%{transform:translate(0,-1px)}}
+              .player-bash{animation:player-bash 0.45s ease-out}
+            `}</style>
+            <div className={`w-full max-w-sm mb-2${bossHit ? " boss-bash" : ""}`}>
+              <div className="flex items-center gap-3 bg-red-950 rounded-2xl px-3 py-2">
+                <img src="/ch/troodos.png" alt="Troodos" className="h-14 w-auto object-contain select-none pointer-events-none shrink-0" draggable={false} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-black text-red-300">Troodos</span>
+                    <span className={`text-xs font-mono font-bold tabular-nums ${timerMs < 60000 ? "text-red-400 animate-pulse" : "text-white/50"}`}>{fmtMs(timerMs)}</span>
+                  </div>
+                  <div className="w-full h-2 bg-red-900/60 rounded-full overflow-hidden">
+                    <div className="h-2 bg-red-500 rounded-full transition-all duration-500" style={{ width: `${bossHpPct}%` }} />
+                  </div>
+                  <p className="text-[10px] text-white/30 mt-0.5">{bossDisplayState.hp} / {bossDisplayState.maxHp} Rätselkraft</p>
+                </div>
+              </div>
+            </div>
+            <div className={`w-full max-w-sm mb-2 flex items-end justify-center gap-1${playerHit ? " player-bash" : ""}`}>
+              <img src="/ch/trizea.png" alt="Trizea" className="h-24 w-auto object-contain select-none pointer-events-none" draggable={false} />
+              <img src="/ch/parus.png" alt="Parus" className="h-32 w-auto object-contain select-none pointer-events-none" draggable={false} />
+              <img src="/ch/edo_solo.png" alt="Edo" className="h-24 w-auto object-contain select-none pointer-events-none" draggable={false} />
+            </div>
+          </>
+        );
+      })()}
+
+      {/* Team shield overlay (UNIBEAM only) */}
+      {fullShieldState && (
+        <div className="w-full max-w-sm mb-3 space-y-2">
+          {fullShieldState.teams.map((team, idx) => {
+            const color = TEAM_COLORS[idx] ?? TEAM_COLORS[0];
+            const pct = Math.max(0, Math.round((team.hp / Math.max(team.maxHp, 1)) * 100));
+            const isMyTeam = teamInfo?.teamIndex === idx;
+            const tookDmg = shieldDmgTeam === idx;
+            return (
+              <div key={team.name} className="rounded-xl px-3 py-2" style={{ background: `${color}18`, outline: isMyTeam ? `2px solid ${color}` : `1px solid ${color}40` }}>
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <img src={idx === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"} className="h-6 w-auto object-contain select-none pointer-events-none" draggable={false} />
+                    <span className="text-xs font-black" style={{ color }}>{team.name}{isMyTeam ? " (du)" : ""}</span>
+                  </div>
+                  <span className={`text-xs font-bold tabular-nums${tookDmg ? " animate-pulse" : ""}`} style={{ color }}>
+                    {team.hp} / {team.maxHp}
+                  </span>
+                </div>
+                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: `${color}30` }}>
+                  <div className={`h-2 rounded-full transition-all duration-500${tookDmg ? " opacity-60" : ""}`} style={{ width: `${pct}%`, backgroundColor: color }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
-      {bossMode && (
+
+      {/* Dino group (boss BEAMER mode — no overlay) */}
+      {bossMode && !bossDisplayState && (
         <div className="w-full max-w-sm mb-3 flex items-end justify-center gap-3">
           <img src="/ch/trizea.png" alt="Trizea" className="h-48 w-auto object-contain select-none pointer-events-none" draggable={false} />
           <img src="/ch/parus.png" alt="Parus" className="h-60 w-auto object-contain select-none pointer-events-none" draggable={false} />
           <img src="/ch/edo_solo.png" alt="Edo" className="h-48 w-auto object-contain select-none pointer-events-none" draggable={false} />
         </div>
       )}
+
+      {showLogo && !teamInfo && !bossMode && (
+        <img src="/quizzl_logo.png" alt="Quizzl" className="w-full max-w-sm mb-4 px-8 select-none" draggable={false} />
+      )}
       <div className="w-full max-w-sm bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col min-h-[500px]" style={teamInfo ? { borderTop: `4px solid ${teamColor}` } : undefined}>
-        {teamInfo && (
+        {teamInfo && !fullShieldState && (
           <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-100">
             <img
               src={teamInfo.teamIndex === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"}
