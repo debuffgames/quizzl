@@ -469,7 +469,7 @@ function TeacherContent() {
 
   const startAutoCountdown = useCallback(() => {
     cancelAutoCountdown();
-    setAutoCountdown(5);
+    setAutoCountdown(3);
     autoCountdownIntervalRef.current = setInterval(() => {
       setAutoCountdown((prev) => {
         if (prev === null || prev <= 1) {
