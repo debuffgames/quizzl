@@ -1216,13 +1216,40 @@ function TeacherContent() {
   if (phase === "lobby") {
     return (
       <Layout reconnecting={!socketConnected}>
-        <div className="px-4 pt-2 pb-3 border-b">
+        <div className="px-4 pt-2 pb-3 border-b flex flex-col gap-2">
           <button
             onClick={nextQuestion}
             className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm border-2 border-[#02512c] text-[#02512c] bg-transparent hover:bg-[rgba(2,81,44,0.08)] transition-all duration-150"
           >
             Erste Frage →
           </button>
+          {gameMode === "BEAMER" && (
+            <div className="flex items-center gap-2">
+              <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                <button
+                  onClick={() => { setAutoAdvance(false); cancelAutoCountdown(); }}
+                  className={`px-3 py-1.5 transition-colors ${!autoAdvance ? "bg-[#02512c] text-white" : "text-gray-400 hover:text-gray-600"}`}
+                >Manuell</button>
+                <button
+                  onClick={() => setAutoAdvance(true)}
+                  className={`px-3 py-1.5 transition-colors ${autoAdvance ? "bg-[#02512c] text-white" : "text-gray-400 hover:text-gray-600"}`}
+                >Auto</button>
+              </div>
+              <InfoTooltip
+                text="Manuell: Du bestimmst wann die nächste Frage startet. Auto: Nach der Auflösung startet die nächste Frage automatisch nach 3 Sekunden."
+                position="above"
+              />
+              <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberSetting}
+                  onChange={(e) => setRememberSetting(e.target.checked)}
+                  className="rounded"
+                />
+                merken
+              </label>
+            </div>
+          )}
         </div>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
@@ -1296,6 +1323,10 @@ function TeacherContent() {
                     className={`px-3 py-1.5 transition-colors ${autoAdvance ? "bg-[#02512c] text-white" : "text-gray-400 hover:text-gray-600"}`}
                   >Auto</button>
                 </div>
+                <InfoTooltip
+                  text="Manuell: Du bestimmst wann die nächste Frage startet. Auto: Nach der Auflösung startet die nächste Frage automatisch nach 3 Sekunden."
+                  position="above"
+                />
                 <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
                   <input
                     type="checkbox"
