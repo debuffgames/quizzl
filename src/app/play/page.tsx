@@ -1055,13 +1055,18 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
                   key={a.id}
                   onClick={() => toggleAnswer(a.id)}
                   disabled={submitted}
-                  className={`flex items-center justify-center px-3 py-4 rounded-2xl font-semibold transition-all active:scale-95 text-center text-sm leading-tight
+                  className={`relative flex items-center justify-center px-3 py-4 rounded-2xl font-semibold transition-all active:scale-95 text-center text-sm leading-tight
                     ${color.bg} ${color.text}
-                    ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
+                    ${isSelected ? "answer-selected scale-95" : "shadow-sm"}
                     ${submitted ? "opacity-50" : "cursor-pointer"}
                   `}
                 >
                   {a.text ?? color.shape}
+                  {isSelected && (
+                    <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-white rounded-full flex items-center justify-center text-[11px] font-black text-green-600 shadow leading-none select-none">
+                      ✓
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -1082,13 +1087,18 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
                 key={a.id}
                 onClick={() => toggleAnswer(a.id)}
                 disabled={submitted}
-                className={`flex items-center justify-center p-6 rounded-2xl font-bold transition-all active:scale-95 text-2xl
+                className={`relative flex items-center justify-center p-6 rounded-2xl font-bold transition-all active:scale-95 text-2xl
                   ${color.bg} ${color.text}
-                  ${isSelected ? "ring-4 ring-white ring-offset-2 ring-offset-gray-50 scale-95" : "shadow-sm"}
+                  ${isSelected ? "answer-selected scale-95" : "shadow-sm"}
                   ${submitted ? "opacity-50" : "cursor-pointer"}
                 `}
               >
                 {color.shape}
+                {isSelected && (
+                  <span className="absolute top-1.5 right-1.5 w-5 h-5 bg-white rounded-full flex items-center justify-center text-[11px] font-black text-green-600 shadow leading-none select-none">
+                    ✓
+                  </span>
+                )}
               </button>
             );
           })}
@@ -1168,6 +1178,10 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
   const shieldChargeScale = 0.1 + 0.9 * (shieldChargeProgress ?? 0);
   return (
     <div className={`min-h-screen bg-gray-50 flex flex-col items-center px-4 py-4 ${hasOverlay ? "justify-start" : "justify-center"}`}>
+      <style>{`
+        @keyframes selected-pulse{0%,100%{box-shadow:0 0 0 3px white,0 0 8px 3px rgba(255,255,255,.55)}50%{box-shadow:0 0 0 4px white,0 0 20px 8px rgba(255,255,255,.9)}}
+        .answer-selected{animation:selected-pulse 1.1s ease-in-out infinite}
+      `}</style>
       {/* Boss overlay (UNIBEAM only) */}
       {bossDisplayState && (() => {
         const timerMs = Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()));
