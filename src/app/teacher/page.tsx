@@ -7,6 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { io, Socket } from "socket.io-client";
 import { QUIZ_EVENTS } from "@/lib/socket/events";
 import * as XLSX from "xlsx";
+import { InfoTooltip } from "@/components/InfoTooltip";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1218,12 +1219,18 @@ function TeacherContent() {
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <h1 className="font-bold">{selectedQuiz?.title}</h1>
-            <p className="text-xs text-gray-400">{gameMode === "AUTONOMOUS" ? "Autonom" : "Beamer"} · Warte auf Schüler</p>
+            <p className="text-xs text-gray-400">{gameMode === "AUTONOMOUS" ? "Autonomes Spiel" : "Zusammenspiel"} · Warte auf Schüler</p>
           </div>
           {gameMode === "BEAMER" && (
-            <button onClick={openBeamer} className="text-xs border border-indigo-300 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-50">
-              Beamer öffnen ↗
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={openBeamer} className="text-xs border border-indigo-300 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-50">
+                Beamer öffnen ↗
+              </button>
+              <InfoTooltip
+                text="Öffnet die Beamer-Ansicht in einem neuen Tab. Solange dieser Tab offen ist, sehen die Schüler nur die Buzzer-Buttons. Schließt man den Tab, werden Fragen und Antworten direkt auf den Schülergeräten angezeigt."
+                position="above"
+              />
+            </div>
           )}
         </header>
         <div className="flex-1 overflow-y-auto px-4 py-3">
@@ -1266,9 +1273,15 @@ function TeacherContent() {
             )}
           </div>
           {gameMode === "BEAMER" && (
-            <button onClick={openBeamer} className="text-xs border border-indigo-300 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50">
-              Beamer ↗
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button onClick={openBeamer} className="text-xs border border-indigo-300 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50">
+                Beamer ↗
+              </button>
+              <InfoTooltip
+                text="Öffnet die Beamer-Ansicht in einem neuen Tab. Solange dieser Tab offen ist, sehen die Schüler nur die Buzzer-Buttons. Schließt man den Tab, werden Fragen und Antworten direkt auf den Schülergeräten angezeigt."
+                position="above"
+              />
+            </div>
           )}
         </header>
 

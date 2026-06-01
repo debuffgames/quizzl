@@ -2,6 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { InfoTooltip } from "@/components/InfoTooltip";
 
 interface QuizSummary {
   id: string;
@@ -100,6 +101,19 @@ function ConfigContent() {
 
   const openEditor = () => window.parent.postMessage({ type: "OPEN_EDITOR" }, "*");
 
+  const GAME_MODES: { value: GameMode; label: string; info: string }[] = [
+    {
+      value: "AUTONOMOUS",
+      label: "Autonomes Spiel",
+      info: "Jeder Schüler beantwortet die Fragen in seinem eigenen Tempo auf seinem Gerät. Kein Beamer oder Synchronisation nötig.",
+    },
+    {
+      value: "BEAMER",
+      label: "Zusammenspiel",
+      info: "Der Lehrer steuert das Tempo — alle sehen dieselbe Frage gleichzeitig. Wahlweise mit Beamer für die Klasse oder die Schüler sehen alles direkt auf ihren Geräten.",
+    },
+  ];
+
   const BEAMER_MODES: { value: BeamerMode; label: string }[] = [
     { value: "STANDARD", label: "Standard" },
     { value: "TEAM_SHIELD", label: "Team-Schild" },
@@ -138,18 +152,20 @@ function ConfigContent() {
       <div>
         <label className="block text-xs font-medium text-gray-500 mb-1">Spielmodus</label>
         <div className="flex gap-2">
-          {(["AUTONOMOUS", "BEAMER"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => handleGameModeChange(m)}
-              className={`flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
-                gameMode === m
-                  ? "border-indigo-500 bg-indigo-50 text-indigo-700"
-                  : "border-gray-200 text-gray-500 hover:border-gray-400"
-              }`}
-            >
-              {m === "AUTONOMOUS" ? "Autonom" : "Beamer"}
-            </button>
+          {GAME_MODES.map((m) => (
+            <div key={m.value} className="flex-1 flex items-center gap-1">
+              <button
+                onClick={() => handleGameModeChange(m.value)}
+                className={`flex-1 rounded-lg border py-1.5 text-xs font-medium transition-colors ${
+                  gameMode === m.value
+                    ? "border-indigo-500 bg-indigo-50 text-indigo-700"
+                    : "border-gray-200 text-gray-500 hover:border-gray-400"
+                }`}
+              >
+                {m.label}
+              </button>
+              <InfoTooltip text={m.info} />
+            </div>
           ))}
         </div>
       </div>

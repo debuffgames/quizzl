@@ -40,6 +40,9 @@ export const QUIZ_EVENTS = {
 
   // Server → Beamer
   SESSION_STARTED: "quiz:sessionStarted",  // new session in same lobby — beamer should reset
+
+  // Server → Students (and Teacher)
+  DISPLAY_MODE_CHANGED: "quiz:displayModeChanged", // beamer connected/disconnected → students switch view
 } as const;
 
 export type BossAbility =

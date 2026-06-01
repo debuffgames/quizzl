@@ -276,13 +276,19 @@ export async function advanceToNextQuestion(io: Server, session: LiveSession, se
     fairZoneSecs: session.speedMode !== "NORMAL" ? calcFairZone(question, session.speedMode) : undefined,
   };
 
-  // Students: no text/answer text; hidden answer stays hidden (they don't need its ID)
-  const studentPayload = {
-    ...basePayload,
-    text: undefined,
-    answers: question.answers.map((a) => ({ id: a.id, text: undefined, sortOrder: a.sortOrder })),
-    hiddenAnswerId: undefined,
-  };
+  // Students: UNIBEAM = full text (they are the display); BEAMER = buzzer-only (projector shows text)
+  const studentPayload = session.displayMode === "UNIBEAM"
+    ? {
+        ...basePayload,
+        bossAbility: session.currentBossAbility,  // full ability in UNIBEAM
+      }
+    : {
+        ...basePayload,
+        text: undefined,
+        answers: question.answers.map((a) => ({ id: a.id, text: undefined, sortOrder: a.sortOrder })),
+        hiddenAnswerId: undefined,
+        bossAbility: session.currentBossAbility === "DANCING_BUZZERS" ? "DANCING_BUZZERS" : null,
+      };
 
   // Beamer: full text; HIDDEN_ANSWER ability hides the answer text (not ID)
   const beamerPayload = {

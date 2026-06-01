@@ -65,6 +65,7 @@ export interface LiveSession {
   answerRevealed: boolean;             // true after revealAnswer runs — prevents double-scoring on reconnect
   paused: boolean;
   pausedAt: number | null;             // epoch ms when pause started
+  displayMode: "BEAMER" | "UNIBEAM";  // UNIBEAM = no projector, students see full UI on their devices
 }
 
 export class SessionManager {
@@ -74,7 +75,7 @@ export class SessionManager {
   private lobbyBeamerSockets = new Map<string, string>();   // lobbyId → beamer socketId (persists across sessions)
   private beamerSocketToLobby = new Map<string, string>();  // beamer socketId → lobbyId (for cleanup)
 
-  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossTimerFrozenRemaining" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd" | "answerRevealed" | "paused" | "pausedAt">): LiveSession {
+  createSession(session: Omit<LiveSession, "participants" | "socketToParticipant" | "questionTimerHandle" | "answersVisibleAt" | "questionStartedAt" | "absoluteQuestionIndex" | "teamShieldMax" | "teamShields" | "bossMaxHp" | "bossHp" | "bossTimerEnd" | "bossTimerFrozenRemaining" | "bossWrongCount" | "currentBossAbility" | "hiddenAnswerId" | "pendingEnd" | "answerRevealed" | "paused" | "pausedAt" | "displayMode">): LiveSession {
     const live: LiveSession = {
       ...session,
       questionTimerHandle: null,
@@ -96,6 +97,7 @@ export class SessionManager {
       answerRevealed: false,
       paused: false,
       pausedAt: null,
+      displayMode: "UNIBEAM",
     };
     this.sessions.set(session.sessionId, live);
     this.lobbyToSession.set(session.lobbyId, session.sessionId);
@@ -187,12 +189,18 @@ export class SessionManager {
     return this.lobbyBeamerSockets.get(lobbyId) ?? null;
   }
 
+  getSessionBySocket(socketId: string): LiveSession | undefined {
+    const sessionId = this.socketToSession.get(socketId);
+    return sessionId ? this.sessions.get(sessionId) : undefined;
+  }
+
   removeBeamerSocket(socketId: string): void {
     const lobbyId = this.beamerSocketToLobby.get(socketId);
     if (lobbyId) {
       this.lobbyBeamerSockets.delete(lobbyId);
       this.beamerSocketToLobby.delete(socketId);
     }
+    this.socketToSession.delete(socketId);
   }
 
   endSession(sessionId: string): void {
