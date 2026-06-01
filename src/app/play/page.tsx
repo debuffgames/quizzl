@@ -489,19 +489,101 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
   const [bossHit, setBossHit] = useState(false);
   const [playerHit, setPlayerHit] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [bossChargeAnim, setBossChargeAnim] = useState<{ type: "attack" | "steal"; finalValue: number; progress: number; key: number } | null>(null);
+  const [bossAnimTrigger, setBossAnimTrigger] = useState<{ type: "attack" | "steal"; value: number; key: number } | null>(null);
+  const [bossStealChargeValue, setBossStealChargeValue] = useState<number | null>(null);
   const [fullShieldState, setFullShieldState] = useState<{ teams: { name: string; hp: number; maxHp: number }[] } | null>(null);
-  const [shieldDmgTeam, setShieldDmgTeam] = useState<0 | 1 | null>(null);
+  const [shieldDisplayHp, setShieldDisplayHp] = useState<[number, number] | null>(null);
+  const [shieldChargeVisible, setShieldChargeVisible] = useState<[boolean, boolean]>([false, false]);
+  const [shieldChargeDmg, setShieldChargeDmg] = useState<[number, number]>([0, 0]);
+  const [shieldChargeProgress, setShieldChargeProgress] = useState(0);
+  const [shieldHitTeam, setShieldHitTeam] = useState<0 | 1 | null>(null);
+  const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
   const prevBossHpRef = useRef<number | null>(null);
   const prevBossTimerEndRef = useRef<number | null>(null);
   const prevShieldHpForRevealRef = useRef<[number, number] | null>(null);
   const fullShieldStateRef = useRef<{ teams: { name: string; hp: number; maxHp: number }[] } | null>(null);
   useEffect(() => { fullShieldStateRef.current = fullShieldState; }, [fullShieldState]);
+  const pendingBossDisplayStateRef = useRef<{ hp: number; maxHp: number; timerEnd: number; timerFrozen?: boolean } | null>(null);
+  const bossChargeRafRef = useRef<number | null>(null);
+  const bossStealQueuedRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (!bossDisplayState) return;
     const id = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(id);
   }, [!!bossDisplayState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Boss: charge orb grows (3 s) → projectile flies → impact bash
+  useEffect(() => {
+    if (!bossChargeAnim) return;
+    if (bossChargeRafRef.current) cancelAnimationFrame(bossChargeRafRef.current);
+    const CHARGE_MS = 3000;
+    const startTime = Date.now();
+    const { type, finalValue, key } = bossChargeAnim;
+    const rafRef = { current: 0 };
+    const tick = () => {
+      const progress = Math.min(1, (Date.now() - startTime) / CHARGE_MS);
+      setBossChargeAnim((prev) => prev?.key === key ? { ...prev, progress } : prev);
+      if (progress < 1) { rafRef.current = requestAnimationFrame(tick); bossChargeRafRef.current = rafRef.current; }
+      else { setBossChargeAnim(null); setBossAnimTrigger({ type, value: finalValue, key: key + 1 }); }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    bossChargeRafRef.current = rafRef.current;
+    return () => { cancelAnimationFrame(rafRef.current); };
+  }, [bossChargeAnim?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!bossAnimTrigger) return;
+    const hitId = setTimeout(() => { if (bossAnimTrigger.type === "attack") setBossHit(true); else setPlayerHit(true); }, 600);
+    const endId = setTimeout(() => {
+      setBossHit(false); setPlayerHit(false);
+      if (bossAnimTrigger.type === "attack" && bossStealQueuedRef.current !== null) {
+        const v = bossStealQueuedRef.current; bossStealQueuedRef.current = null;
+        setBossStealChargeValue(null);
+        setBossAnimTrigger({ type: "steal", value: v, key: Date.now() });
+      } else {
+        setBossAnimTrigger(null);
+        if (pendingBossDisplayStateRef.current) { setBossDisplayState(pendingBossDisplayStateRef.current); pendingBossDisplayStateRef.current = null; }
+      }
+    }, 1100);
+    return () => { clearTimeout(hitId); clearTimeout(endId); };
+  }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Shield: both charge orbs grow simultaneously, then flash-hit the damaged team bar
+  useEffect(() => {
+    if (!shieldAnimTrigger) return;
+    const { preHp, postHp } = shieldAnimTrigger;
+    const dmgTo1 = Math.max(0, preHp[1] - postHp[1]);
+    const dmgTo0 = Math.max(0, preHp[0] - postHp[0]);
+    setShieldDisplayHp([...preHp] as [number, number]);
+    setShieldChargeVisible([dmgTo1 > 0, dmgTo0 > 0]);
+    setShieldChargeDmg([dmgTo1, dmgTo0]);
+    setShieldChargeProgress(0);
+    setShieldHitTeam(null);
+    const CHARGE_MS = 3000;
+    const startTime = Date.now();
+    const rafRef = { current: 0 };
+    const ids: ReturnType<typeof setTimeout>[] = [];
+    const tick = () => {
+      const p = Math.min(1, (Date.now() - startTime) / CHARGE_MS);
+      setShieldChargeProgress(p);
+      if (p < 1) { rafRef.current = requestAnimationFrame(tick); return; }
+      let t = 0;
+      if (dmgTo1 > 0) {
+        ids.push(setTimeout(() => { setShieldChargeVisible([false, dmgTo0 > 0]); setShieldHitTeam(1); setShieldDisplayHp([preHp[0], postHp[1]]); }, t));
+        t += 550; ids.push(setTimeout(() => setShieldHitTeam(null), t)); t += 350;
+      }
+      if (dmgTo0 > 0) {
+        ids.push(setTimeout(() => { setShieldChargeVisible([false, false]); setShieldHitTeam(0); setShieldDisplayHp([postHp[0], postHp[1]]); }, t));
+        t += 550; ids.push(setTimeout(() => { setShieldHitTeam(null); setShieldDisplayHp(null); setShieldChargeProgress(0); }, t));
+      } else {
+        ids.push(setTimeout(() => { setShieldChargeVisible([false, false]); setShieldDisplayHp(null); setShieldChargeProgress(0); }, t));
+      }
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(rafRef.current); ids.forEach(clearTimeout); };
+  }, [shieldAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerEndRef = useRef<number | null>(null);
@@ -601,8 +683,9 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
         if (pre) {
           prevShieldHpForRevealRef.current = null;
           const post: [number, number] = [data.teams[0].hp, data.teams[1].hp];
-          if (pre[0] > post[0]) { setShieldDmgTeam(0); setTimeout(() => setShieldDmgTeam(null), 900); }
-          else if (pre[1] > post[1]) { setShieldDmgTeam(1); setTimeout(() => setShieldDmgTeam(null), 900); }
+          if (pre[0] !== post[0] || pre[1] !== post[1]) {
+            setShieldAnimTrigger({ preHp: pre, postHp: post, key: Date.now() });
+          }
         }
         setFullShieldState(data);
       }
@@ -620,9 +703,21 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
         const prevTimerEnd = prevBossTimerEndRef.current;
         prevBossHpRef.current = data.hp;
         prevBossTimerEndRef.current = data.timerEnd;
-        if (prevHp !== null && data.hp < prevHp) { setBossHit(true); setTimeout(() => setBossHit(false), 500); }
-        if (prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000) { setPlayerHit(true); setTimeout(() => setPlayerHit(false), 500); }
-        setBossDisplayState({ hp: data.hp, maxHp: data.maxHp, timerEnd: data.timerEnd, timerFrozen: data.timerFrozen });
+        const attackDmg = prevHp !== null && data.hp < prevHp ? prevHp - data.hp : 0;
+        const stealSecs = prevTimerEnd !== null && data.timerEnd < prevTimerEnd - 5000 ? Math.round((prevTimerEnd - data.timerEnd) / 1000) : 0;
+        if (attackDmg > 0 || stealSecs > 0) {
+          pendingBossDisplayStateRef.current = { hp: data.hp, maxHp: data.maxHp, timerEnd: data.timerEnd, timerFrozen: data.timerFrozen };
+          if (attackDmg > 0 && stealSecs > 0) {
+            bossStealQueuedRef.current = stealSecs; setBossStealChargeValue(stealSecs);
+            setBossChargeAnim({ type: "attack", finalValue: attackDmg, progress: 0, key: Date.now() });
+          } else if (attackDmg > 0) {
+            setBossChargeAnim({ type: "attack", finalValue: attackDmg, progress: 0, key: Date.now() });
+          } else {
+            setBossChargeAnim({ type: "steal", finalValue: stealSecs, progress: 0, key: Date.now() });
+          }
+        } else {
+          setBossDisplayState({ hp: data.hp, maxHp: data.maxHp, timerEnd: data.timerEnd, timerFrozen: data.timerFrozen });
+        }
       }
     };
     const onDisplayModeChanged = (data: { mode: "BEAMER" | "UNIBEAM"; question?: { text?: string; answers?: BeamerQuestion["answers"]; bossAbility?: string | null } }) => {
@@ -753,8 +848,15 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
         bossHit={displayMode === "UNIBEAM" ? bossHit : false}
         playerHit={displayMode === "UNIBEAM" ? playerHit : false}
         nowTick={nowTick}
+        bossChargeAnim={displayMode === "UNIBEAM" ? bossChargeAnim : null}
+        bossAnimTrigger={displayMode === "UNIBEAM" ? bossAnimTrigger : null}
+        bossStealChargeValue={displayMode === "UNIBEAM" ? bossStealChargeValue : null}
         fullShieldState={displayMode === "UNIBEAM" ? fullShieldState : null}
-        shieldDmgTeam={displayMode === "UNIBEAM" ? shieldDmgTeam : null}
+        shieldDisplayHp={displayMode === "UNIBEAM" ? shieldDisplayHp : null}
+        shieldChargeVisible={displayMode === "UNIBEAM" ? shieldChargeVisible : [false, false]}
+        shieldChargeDmg={displayMode === "UNIBEAM" ? shieldChargeDmg : [0, 0]}
+        shieldChargeProgress={displayMode === "UNIBEAM" ? shieldChargeProgress : 0}
+        shieldHitTeam={displayMode === "UNIBEAM" ? shieldHitTeam : null}
       >
         <div className="flex flex-col items-center gap-1 mb-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${correct ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
@@ -799,8 +901,15 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
       bossHit={displayMode === "UNIBEAM" ? bossHit : false}
       playerHit={displayMode === "UNIBEAM" ? playerHit : false}
       nowTick={nowTick}
+      bossChargeAnim={displayMode === "UNIBEAM" ? bossChargeAnim : null}
+      bossAnimTrigger={displayMode === "UNIBEAM" ? bossAnimTrigger : null}
+      bossStealChargeValue={displayMode === "UNIBEAM" ? bossStealChargeValue : null}
       fullShieldState={displayMode === "UNIBEAM" ? fullShieldState : null}
-      shieldDmgTeam={displayMode === "UNIBEAM" ? shieldDmgTeam : null}
+      shieldDisplayHp={displayMode === "UNIBEAM" ? shieldDisplayHp : null}
+      shieldChargeVisible={displayMode === "UNIBEAM" ? shieldChargeVisible : [false, false]}
+      shieldChargeDmg={displayMode === "UNIBEAM" ? shieldChargeDmg : [0, 0]}
+      shieldChargeProgress={displayMode === "UNIBEAM" ? shieldChargeProgress : 0}
+      shieldHitTeam={displayMode === "UNIBEAM" ? shieldHitTeam : null}
     >
       {phase === "answered" ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6">
@@ -916,7 +1025,7 @@ function fmtMs(ms: number) {
 
 const TEAM_COLORS = ["#22c55e", "#f97316"] as const;
 
-function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, fullShieldState, shieldDmgTeam, showLogo }: {
+function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, bossChargeAnim, bossAnimTrigger, bossStealChargeValue, fullShieldState, shieldDisplayHp, shieldChargeVisible, shieldChargeDmg, shieldChargeProgress, shieldHitTeam, showLogo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
@@ -927,27 +1036,37 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
   bossHit?: boolean;
   playerHit?: boolean;
   nowTick?: number;
+  bossChargeAnim?: { type: "attack" | "steal"; finalValue: number; progress: number; key: number } | null;
+  bossAnimTrigger?: { type: "attack" | "steal"; value: number; key: number } | null;
+  bossStealChargeValue?: number | null;
   fullShieldState?: { teams: { name: string; hp: number; maxHp: number }[] } | null;
-  shieldDmgTeam?: 0 | 1 | null;
+  shieldDisplayHp?: [number, number] | null;
+  shieldChargeVisible?: [boolean, boolean];
+  shieldChargeDmg?: [number, number];
+  shieldChargeProgress?: number;
+  shieldHitTeam?: 0 | 1 | null;
   showLogo?: boolean;
 }) {
   const teamColor = teamInfo?.teamIndex === 0 ? TEAM_COLORS[0] : TEAM_COLORS[1];
   const hasOverlay = !!(bossDisplayState || fullShieldState);
+  const chargeScale = 0.1 + 0.9 * (bossChargeAnim?.progress ?? 0);
+  const shieldChargeScale = 0.1 + 0.9 * (shieldChargeProgress ?? 0);
   return (
     <div className={`min-h-screen bg-gray-50 flex flex-col items-center px-4 py-4 ${hasOverlay ? "justify-start" : "justify-center"}`}>
       {/* Boss overlay (UNIBEAM only) */}
       {bossDisplayState && (() => {
-        const timerMs = bossDisplayState.timerFrozen
-          ? Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()))
-          : Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()));
+        const timerMs = Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()));
         const bossHpPct = Math.max(0, Math.round((bossDisplayState.hp / Math.max(bossDisplayState.maxHp, 1)) * 100));
         return (
           <>
             <style>{`
               @keyframes boss-bash{0%,100%{transform:translate(0,0)}20%{transform:translate(-4px,2px)}40%{transform:translate(4px,-2px)}60%{transform:translate(-2px,1px)}80%{transform:translate(2px,-1px)}}
               .boss-bash{animation:boss-bash 0.45s ease-out}
-              @keyframes player-bash{0%,100%{transform:translate(0,0)}20%{transform:translate(0,6px)}40%{transform:translate(0,-4px)}60%{transform:translate(0,2px)}80%{transform:translate(0,-1px)}}
+              @keyframes player-bash{0%,100%{transform:translate(0,0)}20%{transform:translate(0,8px)}40%{transform:translate(0,-5px)}60%{transform:translate(0,3px)}80%{transform:translate(0,-2px)}}
               .player-bash{animation:player-bash 0.45s ease-out}
+              @keyframes charge-pulse{0%,100%{opacity:.85}50%{opacity:1}}
+              @keyframes fly-up{0%{transform:translateX(-50%) translateY(50vh) scale(.5);opacity:0}12%{transform:translateX(-50%) translateY(35vh) scale(1);opacity:1}88%{transform:translateX(-50%) translateY(-8vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(-18vh) scale(.5);opacity:0}}
+              @keyframes fly-down{0%{transform:translateX(-50%) translateY(-15vh) scale(.5);opacity:0}12%{transform:translateX(-50%) translateY(-5vh) scale(1);opacity:1}88%{transform:translateX(-50%) translateY(8vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(15vh) scale(.5);opacity:0}}
             `}</style>
             <div className={`w-full max-w-sm mb-2${bossHit ? " boss-bash" : ""}`}>
               <div className="flex items-center gap-3 bg-red-950 rounded-2xl px-3 py-2">
@@ -969,31 +1088,88 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
               <img src="/ch/parus.png" alt="Parus" className="h-32 w-auto object-contain select-none pointer-events-none" draggable={false} />
               <img src="/ch/edo_solo.png" alt="Edo" className="h-24 w-auto object-contain select-none pointer-events-none" draggable={false} />
             </div>
+
+            {/* Charge orb — attack (bottom) */}
+            {bossChargeAnim?.type === "attack" && (
+              <div className="fixed bottom-10 left-1/2 pointer-events-none z-50 whitespace-nowrap"
+                style={{ animation: "charge-pulse .6s ease-in-out infinite", transform: `translateX(-50%) scale(${chargeScale})` }}>
+                <div className="flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl">
+                  <span className="text-3xl">⚡</span>
+                  <span className="font-black text-yellow-400 text-3xl tabular-nums">-{Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} RK</span>
+                </div>
+              </div>
+            )}
+            {/* Charge orb — steal (near Troodos, top) */}
+            {(bossChargeAnim?.type === "steal" || bossStealChargeValue !== null) && (
+              <div className="fixed top-20 left-1/2 pointer-events-none z-50 whitespace-nowrap"
+                style={{ animation: "charge-pulse .6s ease-in-out infinite", transform: `translateX(-50%) scale(${chargeScale})` }}>
+                <div className="flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl">
+                  <span className="text-3xl">⏳</span>
+                  <span className="font-black text-red-400 text-3xl tabular-nums">
+                    -{bossChargeAnim?.type === "steal" ? Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress) : bossStealChargeValue}s
+                  </span>
+                </div>
+              </div>
+            )}
+            {/* Projectile */}
+            {bossAnimTrigger && (
+              <div className="fixed top-1/2 left-1/2 pointer-events-none z-50 whitespace-nowrap"
+                style={{ animation: `${bossAnimTrigger.type === "attack" ? "fly-up" : "fly-down"} 900ms ease-in-out forwards` }}>
+                <div className="flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl">
+                  <span className="text-3xl">{bossAnimTrigger.type === "attack" ? "⚡" : "⏳"}</span>
+                  <span className={`font-black text-3xl tabular-nums ${bossAnimTrigger.type === "attack" ? "text-yellow-400" : "text-red-400"}`}>
+                    {bossAnimTrigger.type === "attack" ? `-${bossAnimTrigger.value} RK` : `-${bossAnimTrigger.value}s`}
+                  </span>
+                </div>
+              </div>
+            )}
           </>
         );
       })()}
 
       {/* Team shield overlay (UNIBEAM only) */}
       {fullShieldState && (
-        <div className="w-full max-w-sm mb-3 space-y-2">
+        <div className="w-full max-w-sm mb-3 space-y-2 relative">
+          <style>{`
+            @keyframes shield-bash{0%,100%{transform:translateX(0)}20%{transform:translateX(8px)}40%{transform:translateX(-6px)}60%{transform:translateX(4px)}80%{transform:translateX(-2px)}}
+            .shield-bash{animation:shield-bash .45s ease-out}
+          `}</style>
           {fullShieldState.teams.map((team, idx) => {
             const color = TEAM_COLORS[idx] ?? TEAM_COLORS[0];
-            const pct = Math.max(0, Math.round((team.hp / Math.max(team.maxHp, 1)) * 100));
+            const hp = (shieldDisplayHp ?? [fullShieldState.teams[0].hp, fullShieldState.teams[1].hp])[idx];
+            const pct = Math.max(0, Math.round((hp / Math.max(team.maxHp, 1)) * 100));
             const isMyTeam = teamInfo?.teamIndex === idx;
-            const tookDmg = shieldDmgTeam === idx;
+            const isCharging = (shieldChargeVisible ?? [false, false])[idx];
+            const dmgVal = (shieldChargeDmg ?? [0, 0])[idx];
+            const isHit = shieldHitTeam === idx;
             return (
-              <div key={team.name} className="rounded-xl px-3 py-2" style={{ background: `${color}18`, outline: isMyTeam ? `2px solid ${color}` : `1px solid ${color}40` }}>
-                <div className="flex items-center justify-between mb-1.5">
-                  <div className="flex items-center gap-1.5">
-                    <img src={idx === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"} className="h-6 w-auto object-contain select-none pointer-events-none" draggable={false} />
-                    <span className="text-xs font-black" style={{ color }}>{team.name}{isMyTeam ? " (du)" : ""}</span>
+              <div key={team.name} className={isHit ? "shield-bash" : ""}>
+                <div className="rounded-xl px-3 py-2" style={{
+                  background: isHit ? `${color}35` : isCharging ? `${color}22` : `${color}14`,
+                  outline: isMyTeam ? `2px solid ${color}` : `1px solid ${color}40`,
+                  boxShadow: isHit ? `inset 0 0 20px ${color}50` : isCharging ? `inset 0 0 10px ${color}30` : "none",
+                  transition: "background .2s, box-shadow .2s",
+                }}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-1.5">
+                      <img src={idx === 0 ? "/ch/edo_solo.png" : "/ch/parus.png"} className="h-6 w-auto object-contain select-none pointer-events-none" draggable={false} />
+                      <span className="text-xs font-black" style={{ color }}>{team.name}{isMyTeam ? " ✦" : ""}</span>
+                    </div>
+                    <span className="text-xs font-bold tabular-nums" style={{ color }}>{hp} / {team.maxHp}</span>
                   </div>
-                  <span className={`text-xs font-bold tabular-nums${tookDmg ? " animate-pulse" : ""}`} style={{ color }}>
-                    {team.hp} / {team.maxHp}
-                  </span>
-                </div>
-                <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: `${color}30` }}>
-                  <div className={`h-2 rounded-full transition-all duration-500${tookDmg ? " opacity-60" : ""}`} style={{ width: `${pct}%`, backgroundColor: color }} />
+                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: `${color}30` }}>
+                    <div className="h-2 rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: color, boxShadow: isCharging ? `0 0 6px ${color}` : "none" }} />
+                  </div>
+                  {/* Charge orb for this team */}
+                  {isCharging && dmgVal > 0 && (
+                    <div className="mt-1.5 flex justify-center">
+                      <div className="flex items-center gap-1.5 bg-gray-950/80 rounded-full px-3 py-1 whitespace-nowrap"
+                        style={{ animation: "charge-pulse .6s ease-in-out infinite", transform: `scale(${shieldChargeScale})`, transformOrigin: "center" }}>
+                        <span className="text-lg">⚡</span>
+                        <span className="font-black text-white text-lg tabular-nums">-{Math.round(dmgVal * (shieldChargeProgress ?? 0))}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             );

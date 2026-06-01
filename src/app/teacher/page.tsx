@@ -1310,9 +1310,6 @@ function TeacherContent() {
           ) : (
             <p className="text-center text-xs text-gray-400 py-1">Quizzl läuft automatisch</p>
           )}
-          <button onClick={endSession} className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 transition-all duration-150">
-            Session beenden
-          </button>
         </div>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
