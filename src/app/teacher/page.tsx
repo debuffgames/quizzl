@@ -1216,6 +1216,14 @@ function TeacherContent() {
   if (phase === "lobby") {
     return (
       <Layout reconnecting={!socketConnected}>
+        <div className="px-4 pt-2 pb-3 border-b">
+          <button
+            onClick={nextQuestion}
+            className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm border-2 border-[#02512c] text-[#02512c] bg-transparent hover:bg-[rgba(2,81,44,0.08)] transition-all duration-150"
+          >
+            Erste Frage →
+          </button>
+        </div>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <h1 className="font-bold">{selectedQuiz?.title}</h1>
@@ -1223,7 +1231,7 @@ function TeacherContent() {
           </div>
           {gameMode === "BEAMER" && (
             <div className="flex items-center gap-1.5">
-              <button onClick={openBeamer} className="text-xs border border-indigo-300 text-indigo-600 px-3 py-1.5 rounded-lg hover:bg-indigo-50">
+              <button onClick={openBeamer} className="text-xs border-2 border-[#02512c] text-[#02512c] px-2 py-1 rounded-lg hover:bg-[rgba(2,81,44,0.08)] font-semibold transition-all duration-150">
                 Beamer öffnen ↗
               </button>
               <InfoTooltip
@@ -1247,12 +1255,6 @@ function TeacherContent() {
             ))}
           </div>
         </div>
-        <div className="px-4 pb-4">
-          <button onClick={nextQuestion}
-            className="w-full py-3 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 transition-colors">
-            Erste Frage →
-          </button>
-        </div>
       </Layout>
     );
   }
@@ -1261,6 +1263,57 @@ function TeacherContent() {
   if (phase === "active") {
     return (
       <Layout reconnecting={!socketConnected} paused={paused}>
+        <div className="px-4 pt-2 pb-3 border-b flex flex-col gap-2">
+          {gameMode === "BEAMER" ? (
+            <>
+              {!revealed ? (
+                speedMode === "BLITZ" && !answersVisible ? (
+                  <button onClick={showAnswers} className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm bg-orange-400 text-white hover:bg-orange-500 transition-all duration-150">
+                    Antworten zeigen
+                  </button>
+                ) : (
+                  <button onClick={revealAnswer} className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm bg-orange-400 text-white hover:bg-orange-500 transition-all duration-150">
+                    Antwort aufdecken
+                  </button>
+                )
+              ) : pendingEnd ? (
+                <button onClick={() => { cancelAutoCountdown(); nextQuestion(); }} disabled={animLocked} className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm border-2 border-[#02512c] text-[#02512c] bg-transparent hover:bg-[rgba(2,81,44,0.08)] transition-all duration-150 disabled:opacity-45">
+                  {autoCountdown !== null ? `Ergebnis in ${autoCountdown}… →` : "Ergebnis anzeigen →"}
+                </button>
+              ) : (
+                <button onClick={() => { cancelAutoCountdown(); nextQuestion(); }} disabled={animLocked} className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm border-2 border-[#02512c] text-[#02512c] bg-transparent hover:bg-[rgba(2,81,44,0.08)] transition-all duration-150 disabled:opacity-45">
+                  {autoCountdown !== null ? `Nächste Frage in ${autoCountdown}… →` : "Nächste Frage →"}
+                </button>
+              )}
+              <div className="flex items-center gap-2">
+                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
+                  <button
+                    onClick={() => { setAutoAdvance(false); cancelAutoCountdown(); }}
+                    className={`px-3 py-1.5 transition-colors ${!autoAdvance ? "bg-[#02512c] text-white" : "text-gray-400 hover:text-gray-600"}`}
+                  >Manuell</button>
+                  <button
+                    onClick={() => setAutoAdvance(true)}
+                    className={`px-3 py-1.5 transition-colors ${autoAdvance ? "bg-[#02512c] text-white" : "text-gray-400 hover:text-gray-600"}`}
+                  >Auto</button>
+                </div>
+                <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={rememberSetting}
+                    onChange={(e) => setRememberSetting(e.target.checked)}
+                    className="rounded"
+                  />
+                  merken
+                </label>
+              </div>
+            </>
+          ) : (
+            <p className="text-center text-xs text-gray-400 py-1">Quizzl läuft automatisch</p>
+          )}
+          <button onClick={endSession} className="w-full inline-flex items-center justify-center font-semibold rounded-lg px-4 py-2 text-sm bg-red-600 text-white hover:bg-red-700 transition-all duration-150">
+            Session beenden
+          </button>
+        </div>
         <header className="flex items-center justify-between px-4 py-3 border-b">
           <div>
             <p className="text-xs text-gray-400">
@@ -1274,7 +1327,7 @@ function TeacherContent() {
           </div>
           {gameMode === "BEAMER" && (
             <div className="flex items-center gap-1.5">
-              <button onClick={openBeamer} className="text-xs border border-indigo-300 text-indigo-600 px-2 py-1 rounded hover:bg-indigo-50">
+              <button onClick={openBeamer} className="text-xs border-2 border-[#02512c] text-[#02512c] px-2 py-1 rounded-lg hover:bg-[rgba(2,81,44,0.08)] font-semibold transition-all duration-150">
                 Beamer ↗
               </button>
               <InfoTooltip
@@ -1511,57 +1564,6 @@ function TeacherContent() {
           )}
         </div>
 
-        <div className="px-4 pb-4 flex flex-col gap-2">
-          {gameMode === "BEAMER" ? (
-            <>
-              {!revealed ? (
-                speedMode === "BLITZ" && !answersVisible ? (
-                  <button onClick={showAnswers} className="w-full py-2.5 bg-violet-600 text-white font-semibold rounded-xl hover:bg-violet-700 transition-colors">
-                    Antworten zeigen
-                  </button>
-                ) : (
-                  <button onClick={revealAnswer} className="w-full py-2.5 bg-orange-500 text-white font-semibold rounded-xl hover:bg-orange-600 transition-colors">
-                    Antwort aufdecken
-                  </button>
-                )
-              ) : pendingEnd ? (
-                <button onClick={() => { cancelAutoCountdown(); nextQuestion(); }} disabled={animLocked} className="w-full py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 disabled:opacity-40 transition-colors">
-                  {autoCountdown !== null ? `Ergebnis in ${autoCountdown}… →` : "Ergebnis anzeigen →"}
-                </button>
-              ) : (
-                <button onClick={() => { cancelAutoCountdown(); nextQuestion(); }} disabled={animLocked} className="w-full py-2.5 bg-indigo-600 text-white font-semibold rounded-xl hover:bg-indigo-700 disabled:opacity-40 transition-colors">
-                  {autoCountdown !== null ? `Nächste Frage in ${autoCountdown}… →` : "Nächste Frage →"}
-                </button>
-              )}
-              <div className="flex items-center gap-2 mt-1">
-                <div className="flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold">
-                  <button
-                    onClick={() => { setAutoAdvance(false); cancelAutoCountdown(); }}
-                    className={`px-3 py-1.5 transition-colors ${!autoAdvance ? "bg-gray-800 text-white" : "text-gray-400 hover:text-gray-600"}`}
-                  >Manuell</button>
-                  <button
-                    onClick={() => setAutoAdvance(true)}
-                    className={`px-3 py-1.5 transition-colors ${autoAdvance ? "bg-indigo-600 text-white" : "text-gray-400 hover:text-gray-600"}`}
-                  >Auto</button>
-                </div>
-                <label className="flex items-center gap-1 text-xs text-gray-400 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberSetting}
-                    onChange={(e) => setRememberSetting(e.target.checked)}
-                    className="rounded"
-                  />
-                  merken
-                </label>
-              </div>
-            </>
-          ) : (
-            <p className="text-center text-xs text-gray-400 py-1">Quizzl läuft automatisch</p>
-          )}
-          <button onClick={endSession} className="w-full py-2 text-red-500 text-sm hover:bg-red-50 rounded-xl transition-colors">
-            Session beenden
-          </button>
-        </div>
       </Layout>
     );
   }

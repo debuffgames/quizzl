@@ -603,6 +603,7 @@ export function sendShieldState(io: Server, session: LiveSession) {
     ],
   };
   io.to(`${session.sessionId}:beamer`).emit(QUIZ_EVENTS.SHIELD_STATE, state);
+  io.to(`${session.sessionId}:students`).emit(QUIZ_EVENTS.SHIELD_STATE, state);
   if (session.teacherSocketId) {
     io.to(session.teacherSocketId).emit(QUIZ_EVENTS.SHIELD_STATE, state);
   }

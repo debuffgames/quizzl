@@ -481,6 +481,8 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
   const [displayMode, setDisplayMode] = useState<"BEAMER" | "UNIBEAM">(initialDisplayMode);
   const teamInfoRef = useRef<{ teamIndex: number; teamName: string } | null>(null);
   useEffect(() => { teamInfoRef.current = teamInfo; }, [teamInfo]);
+  const displayModeRef = useRef<"BEAMER" | "UNIBEAM">(initialDisplayMode);
+  useEffect(() => { displayModeRef.current = displayMode; }, [displayMode]);
 
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timerEndRef = useRef<number | null>(null);
@@ -552,7 +554,9 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
     };
     const onScoreboard = (data: { topN: TopScore[] }) => {
       setTopScores(data.topN);
-      setPhase("scoreboard");
+      // In UNIBEAM mode students see the reveal screen; don't overwrite it with the
+      // interim scoreboard — the QUESTION event will transition them to the next round.
+      if (displayModeRef.current !== "UNIBEAM") setPhase("scoreboard");
     };
     const onEnd = (data: { topScores?: TopScore[] }) => {
       clearTimer();
