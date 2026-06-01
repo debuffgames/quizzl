@@ -500,6 +500,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
   const [shieldHitTeam, setShieldHitTeam] = useState<0 | 1 | null>(null);
   const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
   const [shieldProjectile, setShieldProjectile] = useState<{ toTeam: 0 | 1; damage: number; key: number } | null>(null);
+  const [frozenBossTimerMs, setFrozenBossTimerMs] = useState<number | null>(null);
   const prevBossHpRef = useRef<number | null>(null);
   const prevBossTimerEndRef = useRef<number | null>(null);
   const prevShieldHpForRevealRef = useRef<[number, number] | null>(null);
@@ -720,6 +721,11 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
     const onBossState = (data: { hp: number; maxHp: number; timerEnd: number; timerFrozen?: boolean; ability?: string | null }) => {
       setBossMode(true);
       setDancing(data.ability === "DANCING_BUZZERS");
+      if (data.timerFrozen) {
+        setFrozenBossTimerMs(Math.max(0, data.timerEnd - Date.now()));
+      } else {
+        setFrozenBossTimerMs(null);
+      }
       if (displayModeRef.current === "UNIBEAM") {
         const prevHp = prevBossHpRef.current;
         const prevTimerEnd = prevBossTimerEndRef.current;
@@ -963,6 +969,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
         bossChargeAnim={displayMode === "UNIBEAM" ? bossChargeAnim : null}
         bossAnimTrigger={displayMode === "UNIBEAM" ? bossAnimTrigger : null}
         bossStealChargeValue={displayMode === "UNIBEAM" ? bossStealChargeValue : null}
+        frozenBossTimerMs={displayMode === "UNIBEAM" ? frozenBossTimerMs : null}
         fullShieldState={displayMode === "UNIBEAM" ? fullShieldState : null}
         shieldDisplayHp={displayMode === "UNIBEAM" ? shieldDisplayHp : null}
         shieldChargeVisible={displayMode === "UNIBEAM" ? shieldChargeVisible : [false, false]}
@@ -1149,7 +1156,7 @@ function fmtMs(ms: number) {
 
 const TEAM_COLORS = ["#22c55e", "#f97316"] as const;
 
-function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, bossChargeAnim, bossAnimTrigger, bossStealChargeValue, fullShieldState, shieldDisplayHp, shieldChargeVisible, shieldChargeDmg, shieldChargeProgress, shieldHitTeam, shieldProjectile, showLogo }: {
+function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, bossChargeAnim, bossAnimTrigger, bossStealChargeValue, frozenBossTimerMs, fullShieldState, shieldDisplayHp, shieldChargeVisible, shieldChargeDmg, shieldChargeProgress, shieldHitTeam, shieldProjectile, showLogo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
@@ -1163,6 +1170,7 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
   bossChargeAnim?: { type: "attack" | "steal"; finalValue: number; progress: number; key: number } | null;
   bossAnimTrigger?: { type: "attack" | "steal"; value: number; key: number } | null;
   bossStealChargeValue?: number | null;
+  frozenBossTimerMs?: number | null;
   fullShieldState?: { teams: { name: string; hp: number; maxHp: number }[] } | null;
   shieldDisplayHp?: [number, number] | null;
   shieldChargeVisible?: [boolean, boolean];
@@ -1184,7 +1192,7 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
       `}</style>
       {/* Boss overlay (UNIBEAM only) */}
       {bossDisplayState && (() => {
-        const timerMs = Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()));
+        const timerMs = frozenBossTimerMs != null ? frozenBossTimerMs : Math.max(0, bossDisplayState.timerEnd - (nowTick ?? Date.now()));
         const bossHpPct = Math.max(0, Math.round((bossDisplayState.hp / Math.max(bossDisplayState.maxHp, 1)) * 100));
         return (
           <>
