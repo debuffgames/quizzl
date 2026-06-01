@@ -23,10 +23,10 @@ export function InfoTooltip({ text, position = "below" }: {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-4 h-4 rounded-full bg-gray-200 text-gray-500 text-[10px] font-bold flex items-center justify-center hover:bg-gray-300 transition-colors leading-none select-none"
+        className="w-4 h-4 rounded-full bg-blue-500 text-white text-[10px] font-bold flex items-center justify-center hover:bg-blue-600 transition-colors leading-none select-none"
         aria-label="Info"
       >
-        i
+        ?
       </button>
       {open && (
         <div
