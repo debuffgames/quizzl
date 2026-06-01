@@ -595,6 +595,16 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
 
   useEffect(() => { finalScoreRef.current = finalScore; }, [finalScore]);
 
+  const [endResult, setEndResult] = useState<{
+    winType?: string;
+    winner?: string;
+    bossTimeRemainingMs?: number;
+    bossTotalMs?: number;
+    bossHpRemaining?: number;
+    bossMaxHp?: number;
+    shieldFinal?: { name: string; hp: number; maxHp: number }[];
+  } | null>(null);
+
   const clearTimer = useCallback(() => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
     timerEndRef.current = null;
@@ -662,9 +672,10 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
       // interim scoreboard — the QUESTION event will transition them to the next round.
       if (displayModeRef.current !== "UNIBEAM") setPhase("scoreboard");
     };
-    const onEnd = (data: { topScores?: TopScore[] }) => {
+    const onEnd = (data: { topScores?: TopScore[]; winType?: string; winner?: string; bossTimeRemainingMs?: number; bossTotalMs?: number; bossHpRemaining?: number; bossMaxHp?: number; shieldFinal?: { name: string; hp: number; maxHp: number }[] }) => {
       clearTimer();
       if (data.topScores) setTopScores(data.topScores);
+      setEndResult({ winType: data.winType, winner: data.winner, bossTimeRemainingMs: data.bossTimeRemainingMs, bossTotalMs: data.bossTotalMs, bossHpRemaining: data.bossHpRemaining, bossMaxHp: data.bossMaxHp, shieldFinal: data.shieldFinal });
       setPhase("ended");
       window.parent.postMessage({ type: "COMPLETE", score: finalScoreRef.current }, "*");
     };
@@ -805,24 +816,114 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
     <ModeStartScreen beamerMode={initialBeamerMode} teamInfo={teamInfo} />
   );
 
-  if (phase === "ended") return (
-    <Shell>
-      <p className="text-gray-400 text-xs font-semibold uppercase tracking-widest mb-1">Quiz beendet</p>
-      <p className="text-gray-900 text-5xl font-black mb-0.5">{finalScore}</p>
-      <p className="text-gray-500 text-base mb-6">Punkte</p>
-      {topScores.length > 0 && (
-        <div className="w-full max-w-xs rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-          {topScores.slice(0, 5).map((s, i) => (
-            <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 bg-white ${i < topScores.length - 1 ? "border-b border-gray-100" : ""}`}>
-              <span className={`text-base font-black w-6 text-center ${s.rank === 1 ? "text-yellow-500" : "text-gray-300"}`}>{s.rank}</span>
-              <span className="flex-1 text-gray-800 font-medium text-sm truncate">{s.displayName}</span>
-              <span className="text-gray-700 font-bold text-sm">{s.score}</span>
+  if (phase === "ended") {
+    const scoreRow = (s: TopScore, i: number) => (
+      <div key={s.rank} className={`flex items-center gap-3 px-4 py-3 ${s.rank === 1 ? "bg-yellow-400 text-gray-900" : s.rank === 2 ? "bg-gray-300 text-gray-900" : s.rank === 3 ? "bg-amber-600 text-white" : "bg-white/10 text-white"} ${i < topScores.length - 1 ? "border-b border-white/10" : ""}`}>
+        <span className="text-sm font-black w-6 text-center">{s.rank}.</span>
+        <span className="flex-1 text-sm font-semibold truncate">{s.displayName}</span>
+        <span className="text-sm font-bold">{s.score}</span>
+      </div>
+    );
+    const myScore = finalScore > 0 && (
+      <div className="bg-white/10 rounded-2xl px-5 py-3 text-center">
+        <p className="text-white/50 text-xs font-semibold uppercase tracking-wider mb-0.5">Deine Punkte</p>
+        <p className="text-white text-4xl font-black">{finalScore}</p>
+      </div>
+    );
+
+    if (endResult?.winType === "boss") {
+      const classWon = endResult.winner === "class";
+      const timeUsedMs = (endResult.bossTotalMs ?? 0) - (endResult.bossTimeRemainingMs ?? 0);
+      return (
+        <div className={`min-h-screen ${classWon ? "bg-gray-900" : "bg-gray-950"} flex flex-col items-center px-5 py-8 gap-5 text-white`}>
+          {classWon ? (
+            <div className="flex items-end justify-center -space-x-4">
+              <img src="/ch/trizea.png" alt="Trizea" className="h-32 w-auto object-contain select-none pointer-events-none relative z-0" draggable={false} />
+              <img src="/ch/parus.png" alt="Parus" className="h-44 w-auto object-contain select-none pointer-events-none relative z-10" draggable={false} />
+              <img src="/ch/edo_solo.png" alt="Edo" className="h-32 w-auto object-contain select-none pointer-events-none relative z-0" draggable={false} />
             </div>
-          ))}
+          ) : (
+            <img src="/ch/troodos.png" alt="Troodos" className="h-44 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          )}
+          <h1 className={`text-4xl font-black text-center leading-tight ${classWon ? "text-yellow-400" : "text-red-500"}`}>
+            {classWon ? "TROODOS BESIEGT!" : "TROODOS\nTRIUMPHIERT"}
+          </h1>
+          {classWon && endResult.bossTotalMs != null && (
+            <div className="bg-yellow-400/10 border border-yellow-400/30 rounded-2xl px-6 py-3 text-center w-full max-w-xs">
+              <p className="text-yellow-300/70 text-xs font-semibold uppercase tracking-wider mb-1">Gebrauchte Zeit</p>
+              <p className="text-yellow-300 text-2xl font-black tabular-nums">{fmtMs(timeUsedMs)} <span className="text-sm text-yellow-300/50 font-normal">/ {fmtMs(endResult.bossTotalMs)}</span></p>
+            </div>
+          )}
+          {!classWon && endResult.bossMaxHp != null && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl px-5 py-3 text-center w-full max-w-xs">
+              <p className="text-red-300/70 text-xs font-semibold uppercase tracking-wider mb-2">Rätselkraft beim Sieg</p>
+              <div className="w-full bg-gray-700 rounded-full h-3 mb-2">
+                <div className="bg-red-500 h-3 rounded-full" style={{ width: `${Math.round(((endResult.bossHpRemaining ?? 0) / Math.max(endResult.bossMaxHp, 1)) * 100)}%` }} />
+              </div>
+              <p className="text-red-300 text-xl font-black">{endResult.bossHpRemaining} <span className="text-red-300/50 font-normal text-base">/ {endResult.bossMaxHp} RK</span></p>
+            </div>
+          )}
+          {myScore}
+          {topScores.length > 0 && (
+            <div className="w-full max-w-xs overflow-hidden rounded-2xl">{topScores.map(scoreRow)}</div>
+          )}
         </div>
-      )}
-    </Shell>
-  );
+      );
+    }
+
+    if (endResult?.winType === "shield" && endResult.shieldFinal) {
+      const isDraw = endResult.winner === "draw";
+      const winnerColor = endResult.winner === "Team Grün" ? "#22c55e" : "#f97316";
+      return (
+        <div className="min-h-screen bg-gray-900 flex flex-col items-center px-5 py-8 gap-5 text-white">
+          {isDraw ? (
+            <div className="flex items-end gap-4">
+              <img src="/ch/edo_solo.png" alt="Team Grün" className="h-36 w-auto object-contain select-none pointer-events-none" draggable={false} />
+              <img src="/ch/parus.png" alt="Team Orange" className="h-36 w-auto object-contain select-none pointer-events-none" draggable={false} />
+            </div>
+          ) : (
+            <img src={endResult.winner === "Team Grün" ? "/ch/edo_solo.png" : "/ch/parus.png"} alt={endResult.winner} className="h-44 w-auto object-contain select-none pointer-events-none" draggable={false} />
+          )}
+          <h1 className="text-4xl font-black text-center" style={{ color: isDraw ? "#e2e8f0" : winnerColor }}>
+            {isDraw ? "UNENTSCHIEDEN" : endResult.winner?.toUpperCase()}
+          </h1>
+          <p className="text-xl font-bold text-white/70">{isDraw ? "Beide Teams gleichauf!" : "hat gewonnen!"}</p>
+          <div className="w-full max-w-xs space-y-3">
+            {endResult.shieldFinal.map((t) => {
+              const color = t.name === "Team Grün" ? "#22c55e" : "#f97316";
+              const isWinner = !isDraw && t.name === endResult.winner;
+              return (
+                <div key={t.name} className="rounded-2xl px-4 py-3" style={isWinner || isDraw ? { outline: `2px solid ${color}`, background: `${color}18` } : { background: `${color}10` }}>
+                  <div className="flex items-center justify-between mb-2" style={{ color }}>
+                    <span className="font-bold">{t.name} {isWinner ? "🏆" : isDraw ? "🤝" : ""}</span>
+                    <span className="font-black tabular-nums">{t.hp} <span className="text-xs font-normal opacity-60">/ {t.maxHp}</span></span>
+                  </div>
+                  <div className="w-full bg-gray-700 rounded-full h-2.5">
+                    <div className="h-2.5 rounded-full" style={{ width: `${Math.max(0, Math.round((t.hp / Math.max(t.maxHp, 1)) * 100))}%`, backgroundColor: color }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {myScore}
+          {topScores.length > 0 && (
+            <div className="w-full max-w-xs overflow-hidden rounded-2xl">{topScores.map(scoreRow)}</div>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center px-5 py-10 gap-5 text-white">
+        <img src="/quizzl_logo.png" alt="Quizzl" className="w-32 select-none" draggable={false} />
+        <h2 className="text-2xl font-bold">Quiz beendet!</h2>
+        {myScore}
+        {topScores.length > 0 && (
+          <div className="w-full max-w-xs overflow-hidden rounded-2xl">{topScores.map(scoreRow)}</div>
+        )}
+      </div>
+    );
+  }
 
   if (phase === "scoreboard" && topScores.length > 0) return (
     <Shell>
