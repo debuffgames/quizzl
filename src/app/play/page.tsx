@@ -499,6 +499,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
   const [shieldChargeProgress, setShieldChargeProgress] = useState(0);
   const [shieldHitTeam, setShieldHitTeam] = useState<0 | 1 | null>(null);
   const [shieldAnimTrigger, setShieldAnimTrigger] = useState<{ preHp: [number, number]; postHp: [number, number]; key: number } | null>(null);
+  const [shieldProjectile, setShieldProjectile] = useState<{ toTeam: 0 | 1; damage: number; key: number } | null>(null);
   const prevBossHpRef = useRef<number | null>(null);
   const prevBossTimerEndRef = useRef<number | null>(null);
   const prevShieldHpForRevealRef = useRef<[number, number] | null>(null);
@@ -550,18 +551,21 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
     return () => { clearTimeout(hitId); clearTimeout(endId); };
   }, [bossAnimTrigger?.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Shield: both charge orbs grow simultaneously, then flash-hit the damaged team bar
+  // Shield: charge orbs grow, then projectile flies to enemy bar, then bash lands — sequentially per team
   useEffect(() => {
     if (!shieldAnimTrigger) return;
     const { preHp, postHp } = shieldAnimTrigger;
-    const dmgTo1 = Math.max(0, preHp[1] - postHp[1]);
-    const dmgTo0 = Math.max(0, preHp[0] - postHp[0]);
+    const dmgTo1 = Math.max(0, preHp[1] - postHp[1]);  // team 0 deals dmg to team 1
+    const dmgTo0 = Math.max(0, preHp[0] - postHp[0]);  // team 1 deals dmg to team 0
     setShieldDisplayHp([...preHp] as [number, number]);
     setShieldChargeVisible([dmgTo1 > 0, dmgTo0 > 0]);
     setShieldChargeDmg([dmgTo1, dmgTo0]);
     setShieldChargeProgress(0);
     setShieldHitTeam(null);
+    setShieldProjectile(null);
     const CHARGE_MS = 3000;
+    const FLY_MS = 900;
+    const BASH_MS = 550;
     const startTime = Date.now();
     const rafRef = { current: 0 };
     const ids: ReturnType<typeof setTimeout>[] = [];
@@ -571,12 +575,19 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
       if (p < 1) { rafRef.current = requestAnimationFrame(tick); return; }
       let t = 0;
       if (dmgTo1 > 0) {
-        ids.push(setTimeout(() => { setShieldChargeVisible([false, dmgTo0 > 0]); setShieldHitTeam(1); setShieldDisplayHp([preHp[0], postHp[1]]); }, t));
-        t += 550; ids.push(setTimeout(() => setShieldHitTeam(null), t)); t += 350;
+        ids.push(setTimeout(() => { setShieldChargeVisible([false, dmgTo0 > 0]); setShieldProjectile({ toTeam: 1, damage: dmgTo1, key: Date.now() }); }, t));
+        t += FLY_MS;
+        ids.push(setTimeout(() => { setShieldProjectile(null); setShieldHitTeam(1); setShieldDisplayHp([preHp[0], postHp[1]]); }, t));
+        t += BASH_MS;
+        ids.push(setTimeout(() => setShieldHitTeam(null), t));
+        t += 150;
       }
       if (dmgTo0 > 0) {
-        ids.push(setTimeout(() => { setShieldChargeVisible([false, false]); setShieldHitTeam(0); setShieldDisplayHp([postHp[0], postHp[1]]); }, t));
-        t += 550; ids.push(setTimeout(() => { setShieldHitTeam(null); setShieldDisplayHp(null); setShieldChargeProgress(0); }, t));
+        ids.push(setTimeout(() => { setShieldChargeVisible([false, false]); setShieldProjectile({ toTeam: 0, damage: dmgTo0, key: Date.now() }); }, t));
+        t += FLY_MS;
+        ids.push(setTimeout(() => { setShieldProjectile(null); setShieldHitTeam(0); setShieldDisplayHp([postHp[0], postHp[1]]); }, t));
+        t += BASH_MS;
+        ids.push(setTimeout(() => { setShieldHitTeam(null); setShieldDisplayHp(null); setShieldChargeProgress(0); }, t));
       } else {
         ids.push(setTimeout(() => { setShieldChargeVisible([false, false]); setShieldDisplayHp(null); setShieldChargeProgress(0); }, t));
       }
@@ -958,6 +969,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
         shieldChargeDmg={displayMode === "UNIBEAM" ? shieldChargeDmg : [0, 0]}
         shieldChargeProgress={displayMode === "UNIBEAM" ? shieldChargeProgress : 0}
         shieldHitTeam={displayMode === "UNIBEAM" ? shieldHitTeam : null}
+        shieldProjectile={displayMode === "UNIBEAM" ? shieldProjectile : null}
       >
         <div className="flex flex-col items-center gap-1 mb-4">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center text-2xl ${correct ? "bg-emerald-100 text-emerald-600" : "bg-red-100 text-red-500"}`}>
@@ -1011,6 +1023,7 @@ function BeamerPlay({ socket, reconnecting, initialBeamerMode, initialDisplayMod
       shieldChargeDmg={displayMode === "UNIBEAM" ? shieldChargeDmg : [0, 0]}
       shieldChargeProgress={displayMode === "UNIBEAM" ? shieldChargeProgress : 0}
       shieldHitTeam={displayMode === "UNIBEAM" ? shieldHitTeam : null}
+      shieldProjectile={displayMode === "UNIBEAM" ? shieldProjectile : null}
     >
       {phase === "answered" ? (
         <div className="flex flex-col items-center justify-center gap-2 py-6">
@@ -1126,7 +1139,7 @@ function fmtMs(ms: number) {
 
 const TEAM_COLORS = ["#22c55e", "#f97316"] as const;
 
-function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, bossChargeAnim, bossAnimTrigger, bossStealChargeValue, fullShieldState, shieldDisplayHp, shieldChargeVisible, shieldChargeDmg, shieldChargeProgress, shieldHitTeam, showLogo }: {
+function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, bossDisplayState, bossHit, playerHit, nowTick, bossChargeAnim, bossAnimTrigger, bossStealChargeValue, fullShieldState, shieldDisplayHp, shieldChargeVisible, shieldChargeDmg, shieldChargeProgress, shieldHitTeam, shieldProjectile, showLogo }: {
   children: React.ReactNode;
   question?: CardQuestion | null;
   timeLeft?: number | null;
@@ -1146,6 +1159,7 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
   shieldChargeDmg?: [number, number];
   shieldChargeProgress?: number;
   shieldHitTeam?: 0 | 1 | null;
+  shieldProjectile?: { toTeam: 0 | 1; damage: number; key: number } | null;
   showLogo?: boolean;
 }) {
   const teamColor = teamInfo?.teamIndex === 0 ? TEAM_COLORS[0] : TEAM_COLORS[1];
@@ -1166,8 +1180,8 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
               @keyframes player-bash{0%,100%{transform:translate(0,0)}20%{transform:translate(0,8px)}40%{transform:translate(0,-5px)}60%{transform:translate(0,3px)}80%{transform:translate(0,-2px)}}
               .player-bash{animation:player-bash 0.45s ease-out}
               @keyframes charge-pulse{0%,100%{opacity:.85}50%{opacity:1}}
-              @keyframes fly-up{0%{transform:translateX(-50%) translateY(50vh) scale(.5);opacity:0}12%{transform:translateX(-50%) translateY(35vh) scale(1);opacity:1}88%{transform:translateX(-50%) translateY(-8vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(-18vh) scale(.5);opacity:0}}
-              @keyframes fly-down{0%{transform:translateX(-50%) translateY(-15vh) scale(.5);opacity:0}12%{transform:translateX(-50%) translateY(-5vh) scale(1);opacity:1}88%{transform:translateX(-50%) translateY(8vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(15vh) scale(.5);opacity:0}}
+              @keyframes fly-to-boss{0%{transform:translateX(-50%) translateY(-29vh) scale(.5);opacity:0}15%{transform:translateX(-50%) translateY(-29vh) scale(1);opacity:1}85%{transform:translateX(-50%) translateY(-43vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(-44vh) scale(.3);opacity:0}}
+              @keyframes fly-from-boss{0%{transform:translateX(-50%) translateY(-43vh) scale(.5);opacity:0}15%{transform:translateX(-50%) translateY(-43vh) scale(1);opacity:1}85%{transform:translateX(-50%) translateY(-29vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(-28vh) scale(.3);opacity:0}}
             `}</style>
             <div className={`w-full max-w-sm mb-2${bossHit ? " boss-bash" : ""}`}>
               <div className="flex items-center gap-3 bg-red-950 rounded-2xl px-3 py-2">
@@ -1190,20 +1204,20 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
               <img src="/ch/edo_solo.png" alt="Edo" className="h-24 w-auto object-contain select-none pointer-events-none" draggable={false} />
             </div>
 
-            {/* Charge orb — attack (bottom) */}
+            {/* Charge orb — attack (near player dino group) */}
             {bossChargeAnim?.type === "attack" && (
-              <div className="fixed bottom-10 left-1/2 pointer-events-none z-50 whitespace-nowrap"
-                style={{ animation: "charge-pulse .6s ease-in-out infinite", transform: `translateX(-50%) scale(${chargeScale})` }}>
+              <div className="fixed left-1/2 pointer-events-none z-50 whitespace-nowrap"
+                style={{ top: "20vh", animation: "charge-pulse .6s ease-in-out infinite", transform: `translateX(-50%) scale(${chargeScale})`, transformOrigin: "center" }}>
                 <div className="flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl">
                   <span className="text-3xl">⚡</span>
                   <span className="font-black text-yellow-400 text-3xl tabular-nums">-{Math.round(bossChargeAnim.finalValue * bossChargeAnim.progress)} RK</span>
                 </div>
               </div>
             )}
-            {/* Charge orb — steal (near Troodos, top) */}
+            {/* Charge orb — steal (near Troodos) */}
             {(bossChargeAnim?.type === "steal" || bossStealChargeValue !== null) && (
-              <div className="fixed top-20 left-1/2 pointer-events-none z-50 whitespace-nowrap"
-                style={{ animation: "charge-pulse .6s ease-in-out infinite", transform: `translateX(-50%) scale(${chargeScale})` }}>
+              <div className="fixed left-1/2 pointer-events-none z-50 whitespace-nowrap"
+                style={{ top: "5vh", animation: "charge-pulse .6s ease-in-out infinite", transform: `translateX(-50%) scale(${chargeScale})`, transformOrigin: "center" }}>
                 <div className="flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl">
                   <span className="text-3xl">⏳</span>
                   <span className="font-black text-red-400 text-3xl tabular-nums">
@@ -1215,7 +1229,7 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
             {/* Projectile */}
             {bossAnimTrigger && (
               <div className="fixed top-1/2 left-1/2 pointer-events-none z-50 whitespace-nowrap"
-                style={{ animation: `${bossAnimTrigger.type === "attack" ? "fly-up" : "fly-down"} 900ms ease-in-out forwards` }}>
+                style={{ animation: `${bossAnimTrigger.type === "attack" ? "fly-to-boss" : "fly-from-boss"} 900ms ease-in-out forwards` }}>
                 <div className="flex items-center gap-2 bg-gray-950/90 rounded-full px-5 py-2.5 shadow-2xl">
                   <span className="text-3xl">{bossAnimTrigger.type === "attack" ? "⚡" : "⏳"}</span>
                   <span className={`font-black text-3xl tabular-nums ${bossAnimTrigger.type === "attack" ? "text-yellow-400" : "text-red-400"}`}>
@@ -1230,10 +1244,14 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
 
       {/* Team shield overlay (UNIBEAM only) */}
       {fullShieldState && (
+        <>
         <div className="w-full max-w-sm mb-3 space-y-2 relative">
           <style>{`
             @keyframes shield-bash{0%,100%{transform:translateX(0)}20%{transform:translateX(8px)}40%{transform:translateX(-6px)}60%{transform:translateX(4px)}80%{transform:translateX(-2px)}}
             .shield-bash{animation:shield-bash .45s ease-out}
+            @keyframes charge-pulse{0%,100%{opacity:.85}50%{opacity:1}}
+            @keyframes fly-to-shield1{0%{transform:translateX(-50%) translateY(-46vh) scale(.5);opacity:0}15%{transform:translateX(-50%) translateY(-46vh) scale(1);opacity:1}85%{transform:translateX(-50%) translateY(-39vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(-38vh) scale(.3);opacity:0}}
+            @keyframes fly-to-shield0{0%{transform:translateX(-50%) translateY(-39vh) scale(.5);opacity:0}15%{transform:translateX(-50%) translateY(-39vh) scale(1);opacity:1}85%{transform:translateX(-50%) translateY(-46vh) scale(1);opacity:1}100%{transform:translateX(-50%) translateY(-47vh) scale(.3);opacity:0}}
           `}</style>
           {fullShieldState.teams.map((team, idx) => {
             const color = TEAM_COLORS[idx] ?? TEAM_COLORS[0];
@@ -1276,6 +1294,17 @@ function GameCard({ children, question, timeLeft, teamInfo, myTeamHp, bossMode, 
             );
           })}
         </div>
+        {/* Shield projectile — flies from attacker bar to enemy bar */}
+        {shieldProjectile && (
+          <div className="fixed top-1/2 left-1/2 pointer-events-none z-50 whitespace-nowrap"
+            style={{ animation: `${shieldProjectile.toTeam === 1 ? "fly-to-shield1" : "fly-to-shield0"} 900ms ease-in-out forwards` }}>
+            <div className="flex items-center gap-1.5 bg-gray-950/90 rounded-full px-4 py-2 shadow-2xl">
+              <span className="text-2xl">⚔️</span>
+              <span className="font-black text-white text-2xl tabular-nums">-{shieldProjectile.damage}</span>
+            </div>
+          </div>
+        )}
+        </>
       )}
 
       {/* Dino group (boss BEAMER mode — no overlay) */}
